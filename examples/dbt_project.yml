@@ -1,0 +1,8 @@
+# Projeto dbt mínimo para testes do dbt-guard (governança PII / linhagem).
+# Compilável com: dbt compile (a partir desta pasta, com DBT_PROFILES_DIR=.).
+name: dbt_guard_example
+version: "1.0.0"
+config-version: 2
+profile: default
+
+model-paths: ["models"]

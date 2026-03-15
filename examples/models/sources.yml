@@ -1,0 +1,17 @@
+# Camada Source: contrato declarativo para governança (PII).
+# O dbt-guard usa security_tag no meta para traçar sensibilidade na linhagem.
+version: 2
+sources:
+  - name: raw
+    description: Camada bruta para testes de linhagem e PII
+    schema: raw
+    tables:
+      - name: raw_clientes
+        description: Tabela de clientes na origem
+        columns:
+          - name: cpf
+            description: CPF do cliente (dado sensível)
+            meta:
+              security_tag: pii
+          - name: nome
+            description: Nome do cliente
