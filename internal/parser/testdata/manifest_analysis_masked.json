@@ -1,0 +1,33 @@
+{
+  "metadata": {},
+  "nodes": {
+    "model.dbt_guard_example.stg_clientes": {
+      "unique_id": "model.dbt_guard_example.stg_clientes",
+      "resource_type": "model",
+      "depends_on": { "nodes": ["source.dbt_guard_example.raw.raw_clientes"], "macros": [] },
+      "meta": {},
+      "name": "stg_clientes",
+      "original_file_path": "models/staging/stg_clientes.sql"
+    },
+    "model.dbt_guard_example.analysis_clientes": {
+      "unique_id": "model.dbt_guard_example.analysis_clientes",
+      "resource_type": "model",
+      "depends_on": { "nodes": ["model.dbt_guard_example.stg_clientes"], "macros": [] },
+      "meta": { "masked": true },
+      "name": "analysis_clientes",
+      "original_file_path": "models/analysis/analysis_clientes.sql"
+    }
+  },
+  "sources": {
+    "source.dbt_guard_example.raw.raw_clientes": {
+      "unique_id": "source.dbt_guard_example.raw.raw_clientes",
+      "source_name": "raw",
+      "name": "raw_clientes",
+      "columns": {
+        "cpf": { "meta": { "security_tag": "pii" } },
+        "nome": {}
+      },
+      "original_file_path": "models/sources.yml"
+    }
+  }
+}

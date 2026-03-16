@@ -12,7 +12,7 @@ Ferramenta de governança em Go que audita automaticamente o grafo de linhagem d
 dbt-guard/
 ├── cmd/dbt-guard/       # Entrada do programa (main.go)
 ├── internal/
-│   ├── parser/          # Parse de sources.yml e detecção de colunas PII
+│   ├── parser/          # Parse de sources.yml + manifest.json (linhagem)
 │   └── validator/       # (futuro) Regras de validação
 ├── examples/            # Projeto dbt mínimo (source → staging → analysis)
 │   ├── dbt_project.yml
@@ -33,7 +33,17 @@ dbt-guard/
 **Compilar e rodar (sem instalar):**
 
 ```bash
+# Listar colunas PII a partir de sources.yml (busca recursiva na pasta)
 go run ./cmd/dbt-guard [pasta]
+
+# Listar IDs de nós/sources com PII declarado no manifest (Fase 1)
+go run ./cmd/dbt-guard manifest <caminho/manifest.json>
+
+# Listar IDs sensíveis (propagação DFS): nós que descendem de PII (Fase 2)
+go run ./cmd/dbt-guard sensitive <caminho/manifest.json>
+
+# Validar camada analysis: falha se algum modelo em analysis/ descender de PII sem mascaramento (Fase 3)
+go run ./cmd/dbt-guard validate <caminho/manifest.json>
 ```
 
 **Compilar um binário:**
@@ -41,9 +51,15 @@ go run ./cmd/dbt-guard [pasta]
 ```bash
 go build -o dbt-guard ./cmd/dbt-guard
 ./dbt-guard [pasta]
+./dbt-guard manifest <caminho/manifest.json>
+./dbt-guard sensitive <caminho/manifest.json>
+./dbt-guard validate <caminho/manifest.json>
 ```
 
-O argumento `[pasta]` é o diretório a partir do qual o dbt-guard procura recursivamente por arquivos `sources.yml`. Se omitido, usa o diretório atual (`.`).
+- **Modo pasta:** procura recursivamente por `sources.yml` e imprime o nome das colunas com `security_tag: pii`.
+- **Modo manifest:** carrega o `manifest.json`, imprime os `unique_id` de nodes/sources que **declaram** PII (meta ou colunas).
+- **Modo sensitive:** carrega o `manifest.json`, percorre o grafo em DFS e imprime os `unique_id` de todos os nós/sources **sensíveis** (que declaram PII ou descendem de um que declara).
+- **Modo validate:** carrega o `manifest.json`, lista modelos em `analysis/`; se algum **descender de PII** e **não** tiver `meta.masked: true` (ou `config.meta.masked`), imprime erro com o modelo e o caminho da linhagem e sai com código 1.
 
 ## Como testar
 
@@ -56,10 +72,7 @@ O argumento `[pasta]` é o diretório a partir do qual o dbt-guard procura recur
    Saída esperada (nomes das colunas com `security_tag: pii`):
 
    ```
-   email
-   full_name
-   customer_email
-   taxpayer_id
+   cpf
    ```
 
 2. **Testar com seu próprio projeto dbt:**  
@@ -71,7 +84,35 @@ O argumento `[pasta]` é o diretório a partir do qual o dbt-guard procura recur
    go run ./cmd/dbt-guard examples/models
    ```
 
-3. **No Cursor/VS Code:**  
+3. **Testar o comando manifest (grafo de linhagem):**  
+   Use um manifest gerado por `dbt compile` ou o fixture de testes:
+
+   ```bash
+   go run ./cmd/dbt-guard manifest internal/parser/testdata/manifest_minimal.json
+   ```
+   Saída esperada: um `unique_id` de source com coluna PII (ex.: `source.dbt_guard_example.raw.raw_clientes`).
+
+4. **Testar propagação DFS (Fase 2 — sensitive):**
+   ```bash
+   go run ./cmd/dbt-guard sensitive internal/parser/testdata/manifest_minimal.json
+   ```
+   Saída esperada: source + os dois models que dependem dela (todos sensíveis):
+   ```
+   model.dbt_guard_example.stg_clientes
+   model.dbt_guard_example.analysis_clientes
+   source.dbt_guard_example.raw.raw_clientes
+   ```
+
+5. **Testar validação da camada analysis (Fase 3 — validate):**
+   ```bash
+   # Sem mascaramento: deve falhar com violação
+   go run ./cmd/dbt-guard validate internal/parser/testdata/manifest_minimal.json
+   # Com meta.masked: true no modelo analysis: deve passar (exit 0)
+   go run ./cmd/dbt-guard validate internal/parser/testdata/manifest_analysis_masked.json
+   ```
+   Na violação, a saída mostra o modelo e a linhagem (ex.: `analysis_clientes → stg_clientes → source.raw.raw_clientes`).
+
+6. **No Cursor/VS Code:**  
    Use a configuração de debug **"Launch dbt-guard"** (F5). Ela já aponta para a pasta `examples` por padrão.
 
 ## Formato YAML (sources do dbt)
@@ -104,7 +145,7 @@ columns:
 
 ## Roadmap
 
-### Fase 1: Definindo as Estruturas de Dados (O Grafo)
+### Fase 1: Definindo as Estruturas de Dados (O Grafo) ✅ Implementado
 
 Construir a estrutura de dados do dbt-guard focada em **análise de linhagem**:
 
@@ -143,22 +184,25 @@ sources:
 ```
 
 - **Objetivo:** validação declarativa (o YAML é o “contrato”); o dbt-guard usa o manifest para percorrer o grafo sem depender de nomes de arquivo.
-- **Critério de conclusão da Fase 1:** carregar o manifest, imprimir os IDs dos nós que possuem a tag `pii`; em seguida partir para a busca recursiva (DFS).
+- **Critério de conclusão da Fase 1:** carregar o manifest, imprimir os IDs dos nós que possuem a tag `pii`; em seguida partir para a busca recursiva (DFS).  
+  **Status:** implementado em `internal/parser/manifest.go` (`LoadManifest`, `Manifest`, `ManifestNode`, `SourceDef`, `NodeIDsWithPII`, `SourceIDsWithPII`). Comando: `dbt-guard manifest <path>`. Testes em `internal/parser/manifest_test.go` e fixture em `internal/parser/testdata/manifest_minimal.json`.
 
 ---
 
-### Fase 2: Implementando o Motor de Propagação (DFS)
+### Fase 2: Implementando o Motor de Propagação (DFS) ✅ Implementado
 
 Implementar a **propagação de sensibilidade** na linhagem:
 
 - Criar a função **`IsSensitive(nodeID string, manifest Manifest) bool`**.
 - Percorrer **recursivamente o grafo** a partir de um nó destino até chegar em uma **source**.
-- Se **qualquer parent** na linhagem tiver **`security_tag: pii`** no meta, o nó atual deve ser considerado PII.
+- Se **qualquer parent** na linhagem tiver **`security_tag: pii`** no meta (ou for source com coluna PII), o nó atual deve ser considerado PII.
 - Usar **DFS (Busca em Profundidade)** e otimizar o uso de memória (evitar visitar o mesmo nó múltiplas vezes, evitar estruturas desnecessárias).
+
+**Status:** implementado em `internal/parser/lineage.go` (`IsSensitive` com DFS e cache por nodeID). Comando `dbt-guard sensitive <path>` imprime todos os nós e sources sensíveis. Testes em `internal/parser/lineage_test.go`.
 
 ---
 
-### Fase 3: O Validador de PRs (Gatekeeper)
+### Fase 3: O Validador de PRs (Gatekeeper) ✅ Implementado
 
 Criar o **comando CLI `validate`**:
 
@@ -171,6 +215,8 @@ Criar o **comando CLI `validate`**:
      - o caminho da linhagem que causou o alerta.
 
 Objetivo: impedir que modelos na camada `analysis` exponham PII sem mascaramento.
+
+**Status:** implementado em `internal/validator/validate.go` (`RunValidate`, `Violation`) e parser (`AnalysisNodeIDs`, `LineagePathToPII`, `IsNodeMasked`). Comando `dbt-guard validate <path>`: exit 1 com mensagem e linhagem em caso de violação. Mascaramento via `meta.masked: true` ou `config.meta.masked: true` no modelo. Testes em `internal/validator/validate_test.go` e fixtures `manifest_minimal.json` / `manifest_analysis_masked.json`.
 
 ---
 

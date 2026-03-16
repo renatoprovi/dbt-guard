@@ -45,6 +45,7 @@ flowchart TB
             P4[ParseSourceFile]
             P5[LoadManifest]
             P6[CollectPIIColumns]
+            P7[IsSensitive / DFS]
         end
         subgraph Validator["validator/"]
             V1[Regras de validação]
@@ -55,10 +56,13 @@ flowchart TB
     M --> P3
     M --> P4
     M --> P6
+    M --> P7
     M --> V1
     P1 --> P4
     P2 --> P5
+    P5 --> P7
     P5 --> V2
+    P7 --> V2
     P4 --> P6
     V2 --> V1
 ```
@@ -66,14 +70,28 @@ flowchart TB
 | Componente | Responsabilidade |
 |------------|------------------|
 | **CLI** | Recebe pasta ou caminho do manifest, invoca parser e validador, imprime resultado ou sai com código de erro. |
-| **Parser** | Lê `sources.yml` (recursivo) e `manifest.json`; expõe structs (SourceFile, Manifest, Node) e funções de busca/coleta de PII. |
+| **Parser** | Lê `sources.yml` (recursivo) e `manifest.json`; expõe structs (SourceFile, Manifest, ManifestNode, SourceDef) e funções de busca/coleta de PII e de IDs com PII no manifest. |
 | **Validator** | (Em evolução) Aplica regras: propagação de sensibilidade (DFS), checagem de mascaramento, validação da camada `analysis`. |
 
 ---
 
-## Fluxo atual (sources.yml)
+## Fluxo atual
 
-Hoje o dbt-guard percorre uma pasta, encontra todos os `sources.yml`, faz parse e imprime o nome das colunas com `security_tag: pii`.
+### Modo sources.yml
+
+O dbt-guard percorre uma pasta, encontra todos os `sources.yml`, faz parse e imprime o nome das colunas com `security_tag: pii`.
+
+### Modo manifest (Fase 1)
+
+O comando `dbt-guard manifest <path>` carrega o `manifest.json` do dbt (v10+), identifica **nodes** e **sources** com tag PII (em `meta` ou em colunas) e imprime seus `unique_id`. Estruturas em `internal/parser/manifest.go`: `Manifest`, `ManifestNode`, `SourceDef`, `DependsOn`, `LoadManifest`, `NodeIDsWithPII`, `SourceIDsWithPII`.
+
+### Modo sensitive (Fase 2 — DFS)
+
+O comando `dbt-guard sensitive <path>` carrega o manifest e imprime os `unique_id` de **todos** os nós e sources que são sensíveis: os que declaram PII ou que **descendem** (via `depends_on`) de algum que declara. A função **`IsSensitive(nodeID, manifest)`** em `internal/parser/lineage.go` percorre o grafo em DFS a partir de cada nó, seguindo os parents; usa cache por nodeID para evitar ciclos e reavaliação.
+
+### Modo validate (Fase 3 — Gatekeeper)
+
+O comando **`dbt-guard validate <path>`** carrega o manifest, identifica modelos em **`analysis/`** (por `original_file_path`), e para cada um que **descende de PII** (IsSensitive) e **não** está mascarado (`meta.masked: true` ou `config.meta.masked: true`) retorna um erro detalhado com o `unique_id` do modelo e o **caminho da linhagem** até a source/nó PII (`LineagePathToPII`). Usado em CI para impedir que PII chegue à camada de análise sem mascaramento.
 
 ```mermaid
 sequenceDiagram
