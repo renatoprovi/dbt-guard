@@ -90,6 +90,10 @@ columns:
       security_tag: pii
 ```
 
+## Documentação
+
+- **[Arquitetura e fluxo](docs/README.md)** — diagramas da arquitetura, fluxo atual (sources.yml), fluxo alvo (manifest + validate) e grafo de linhagem.
+
 ## Desenvolvimento
 
 - **Testes:** `go test ./...`
