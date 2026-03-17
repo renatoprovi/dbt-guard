@@ -1,0 +1,4 @@
+# Artefatos gerados pelo dbt (o manifest é criado por dbt compile)
+target/
+dbt_packages/
+logs/
