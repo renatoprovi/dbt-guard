@@ -115,6 +115,18 @@ go build -o dbt-guard ./cmd/dbt-guard
 6. **No Cursor/VS Code:**  
    Use a configuração de debug **"Launch dbt-guard"** (F5). Ela já aponta para a pasta `examples` por padrão.
 
+### Testar efetivamente (estratégia completa)
+
+- **Testes unitários:** na raiz do repo, rode `go test ./...`. Eles cobrem o parser (manifest, linhagem, PII) e o validator (violações e mascaramento) usando os fixtures em `internal/parser/testdata/`.
+- **Testes E2E do binário:** use o script que compila o binário e executa todos os comandos contra `examples/` e os manifests de teste, conferindo saída e exit code:
+  ```bash
+  ./scripts/test-e2e.sh
+  ```
+  Útil para validar o CLI de ponta a ponta antes de release ou após mudanças no `main`.
+
+**Faz sentido um repositório de teste separado com o example configurado ao binário?**  
+Em geral **não é necessário** para testar o dbt-guard: o próprio repo já tem o `examples/` como projeto dbt mínimo e os fixtures em `internal/parser/testdata/` espelham esse grafo. Rodar `go test ./...` + `./scripts/test-e2e.sh` na raiz já garante que o binário se comporta corretamente com esse cenário. Um **repositório de teste separado** só costuma fazer sentido se você quiser simular uso real em outro projeto (ex.: outro dbt com estrutura diferente, CI que baixa o binário e roda `dbt-guard validate`). Para desenvolvimento e CI do dbt-guard, o `examples/` + script E2E são suficientes.
+
 ## Formato YAML (sources do dbt)
 
 O dbt-guard procura arquivos chamados **`sources.yml`** e, em cada um, lê a estrutura de `sources` → `tables` → `columns`. Uma coluna é considerada PII se tiver:
@@ -137,7 +149,8 @@ columns:
 
 ## Desenvolvimento
 
-- **Testes:** `go test ./...`
+- **Testes unitários:** `go test ./...`
+- **Testes E2E (binário):** `./scripts/test-e2e.sh`
 - **Build de todos os pacotes:** `go build ./...`
 - **Debug:** use o launch **"Launch dbt-guard"** no VS Code/Cursor (F5).
 
