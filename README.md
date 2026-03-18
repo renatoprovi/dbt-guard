@@ -124,8 +124,54 @@ go build -o dbt-guard ./cmd/dbt-guard
   ```
   Útil para validar o CLI de ponta a ponta antes de release ou após mudanças no `main`.
 
-**Faz sentido um repositório de teste separado com o example configurado ao binário?**  
-Em geral **não é necessário** para testar o dbt-guard: o próprio repo já tem o `examples/` como projeto dbt mínimo e os fixtures em `internal/parser/testdata/` espelham esse grafo. Rodar `go test ./...` + `./scripts/test-e2e.sh` na raiz já garante que o binário se comporta corretamente com esse cenário. Um **repositório de teste separado** só costuma fazer sentido se você quiser simular uso real em outro projeto (ex.: outro dbt com estrutura diferente, CI que baixa o binário e roda `dbt-guard validate`). Para desenvolvimento e CI do dbt-guard, o `examples/` + script E2E são suficientes.
+### Testar em cenário real (repositório separado + binário)
+
+Para ver como o dbt-guard se comporta **como se fosse usado em outro repositório** (binário instalado ou em PATH, projeto dbt à parte):
+
+1. **Compilar o binário** (no clone do dbt-guard):
+   ```bash
+   cd /caminho/para/dbt-guard
+   go build -o dbt-guard ./cmd/dbt-guard
+   ```
+
+2. **Criar um “repositório de teste”** com um projeto dbt (pode ser cópia do `examples` ou seu próprio projeto):
+   ```bash
+   mkdir -p ~/dbt-guard-cenario-real
+   cp -r /caminho/para/dbt-guard/examples/* ~/dbt-guard-cenario-real/
+   cd ~/dbt-guard-cenario-real
+   ```
+
+3. **Gerar o manifest** no projeto de teste (exige [dbt-core](https://docs.getdbt.com/docs/get-started/installation) instalado, ex.: `pip install dbt-core dbt-postgres`):
+   ```bash
+   DBT_PROFILES_DIR=. dbt compile
+   ```
+   O banco não precisa estar rodando; o `compile` só gera `target/manifest.json`.
+
+4. **Usar o binário do dbt-guard** a partir do projeto de teste. Duas opções:
+   - **Binário no PATH:** copie para um diretório no PATH (ex.: `cp /caminho/para/dbt-guard/dbt-guard ~/go/bin/` ou `sudo cp ... /usr/local/bin/`) e rode:
+     ```bash
+     cd ~/dbt-guard-cenario-real
+     dbt-guard .                                    # colunas PII nos YAML
+     dbt-guard manifest target/manifest.json
+     dbt-guard sensitive target/manifest.json
+     dbt-guard validate target/manifest.json        # deve falhar (analysis sem mascaramento)
+     ```
+   - **Binário por caminho absoluto:** sem instalar no PATH:
+     ```bash
+     cd ~/dbt-guard-cenario-real
+     /caminho/para/dbt-guard/dbt-guard .
+     /caminho/para/dbt-guard/dbt-guard manifest target/manifest.json
+     /caminho/para/dbt-guard/dbt-guard sensitive target/manifest.json
+     /caminho/para/dbt-guard/dbt-guard validate target/manifest.json
+     ```
+
+5. **Resultado esperado neste cenário:**  
+   - `dbt-guard .` → imprime `cpf` (coluna PII do `sources.yml`).  
+   - `manifest` → imprime o `unique_id` da source com PII.  
+   - `sensitive` → imprime source + modelos que dependem dela.  
+   - `validate` → **exit 1** e mensagem de violação (modelo em `analysis/` descende de PII sem mascaramento). Para fazer passar, adicione `meta: { masked: true }` no modelo em `models/analysis/` e rode `dbt compile` de novo; depois `dbt-guard validate target/manifest.json` deve retornar exit 0.
+
+Assim você valida o comportamento do binário exatamente como em um uso real (outro repo, CI ou máquina com o binário instalado).
 
 ## Formato YAML (sources do dbt)
 
