@@ -1,6 +1,6 @@
 # Projeto dbt de exemplo (dbt-guard)
 
-Projeto dbt **real** e mínimo para testar a ferramenta de governança (PII e linhagem). Estrutura:
+Projeto dbt **real** e mínimo para testar a ferramenta de governança (PII e linhagem). Visão geral do dbt-guard e comandos: [README principal](../README.md). Estrutura:
 
 - **Source:** `models/sources.yml` — tabela `raw_clientes` com colunas `cpf` (meta.security_tag: pii) e `nome`.
 - **Staging:** `models/staging/stg_clientes.sql` — `SELECT *` da source.
