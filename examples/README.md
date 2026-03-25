@@ -51,8 +51,11 @@ cd ..
 Depois use `examples/target/manifest.json` nos comandos:
 
 ```bash
+# Lista os `unique_id` de nós e sources que declaram PII** no manifest (tag na source/coluna ou meta no nó). É o “quem está marcado como sensível no contrato”.
 go run ./cmd/dbt-guard manifest examples/target/manifest.json
+# Percorre o grafo de linhagem (`depends_on`) e lista tudo que é sensível por propagação: quem declara PII e quem **depende (direta ou indiretamente) dessa cadeia. É o “PII + tudo que herda essa sensibilidade”.
 go run ./cmd/dbt-guard sensitive examples/target/manifest.json
+# Foca na camada `analysis/`: se algum modelo público descende de PII e não tem `meta.masked: true`, falha com exit 1 e mostra modelo + caminho na linhagem. É o gate de PR/merge, não só uma listagem.
 go run ./cmd/dbt-guard validate examples/target/manifest.json
 ```
 
