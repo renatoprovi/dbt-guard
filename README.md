@@ -13,41 +13,149 @@ Built for CI gates and data-contract enforcement (e.g. LGPD/GDPR-style PII contr
 - **Declarative PII contract** — tag sensitive columns in `sources.yml` (`meta.security_tag: pii`).
 - **Manifest lineage** — reads dbt `manifest.json` (v10+) and walks `depends_on` edges.
 - **Sensitivity propagation** — DFS marks every node that declares or inherits PII.
-- **Analysis gate** — `validate` fails (exit 1) when a model in a **restricted** layer descends from PII without `meta.masked: true`.
-- **Configurable layers** — allow PII in `confidential`, block in `analysis`, leave `dwh`/`layers` neutral via `dbt-guard.yml`.
+- **Restricted-layer gate** — `validate` fails (exit 1) when a gated model descends from PII without `meta.masked: true`.
+- **Configurable zones** — `pii_allowed`, `pii_restricted`, and neutral layers via `dbt-guard.yml`.
 - **Single binary** — no Python runtime; easy to install in CI and local workflows.
 
 ---
 
-## How it works
+## Where dbt-guard sits in your pipeline
 
-Data flows from raw sources through staging/intermediate layers into the analysis (public) layer. **dbt-guard** runs at that boundary:
+dbt-guard runs **after** `dbt compile`, when the lineage graph is materialized in `manifest.json`. It does not execute SQL or connect to the warehouse.
+
+```mermaid
+flowchart LR
+  subgraph contract [Data contract]
+    SY[sources.yml<br/>PII tags on columns]
+    MD[models/ SQL + schema]
+  end
+
+  DC[dbt compile]
+  MF[(manifest.json<br/>nodes + depends_on)]
+  POL[(dbt-guard.yml<br/>layer policy)]
+  DG[dbt-guard validate]
+  OUT{CI outcome}
+
+  SY --> DC
+  MD --> DC
+  DC --> MF
+  MF --> DG
+  POL --> DG
+  DG -->|exit 0| OUT
+  DG -->|exit 1 + lineage| OUT
+
+  OUT -->|pass| MERGE[PR merge / deploy]
+  OUT -->|fail| BLOCK[Block merge]
+```
+
+---
+
+## Warehouse zones and layer policy
+
+Map your dbt folder structure to governance zones. Only **restricted** layers are gated; **allowed** layers explicitly permit PII; everything else is **neutral** (internal traffic, no gate).
 
 ```mermaid
 flowchart TB
-  subgraph raw [Raw / Sources]
-    R[(PII declared in sources.yml)]
+  subgraph allowed ["pii_allowed — PII permitted without masking"]
+    RAW["models/raw_data/"]
+    CONF["models/confidential/<br/>finance, collections"]
   end
-  subgraph staging [Staging / Intermediate]
-    S[models]
+
+  subgraph neutral ["neutral — not gated"]
+    LAY["models/layers/"]
+    DWH["models/dwh/"]
   end
-  subgraph analysis [Analysis / Public]
-    A[models]
+
+  subgraph restricted ["pii_restricted — validate applies"]
+    ANA["models/analysis/<br/>BI, exports, self-service"]
   end
-  R --> S --> A
-  A --> G{dbt-guard validate}
-  G -->|without masking| B[exit 1]
-  G -->|masked or no PII| O[exit 0]
+
+  RAW --> LAY
+  LAY --> DWH
+  DWH --> CONF
+  DWH --> ANA
+
+  ANA --> GATE{dbt-guard validate}
+  GATE -->|inherits PII<br/>no meta.masked| FAIL["exit 1"]
+  GATE -->|clean or masked| PASS["exit 0"]
+
+  CONF -.->|skipped by gate| OK1["PII OK"]
+  LAY -.->|skipped| OK2["internal OK"]
+  DWH -.->|skipped| OK3["internal OK"]
 ```
 
-| Layer | Role | Rule |
-|-------|------|------|
-| **Raw / Sources** | Contract in `sources.yml` | Columns tagged `meta.security_tag: pii`. |
-| **Staging / Intermediate** | Refinement; may pass PII internally. | — |
-| **Analysis** | Exposed to BI and reports. | Restricted: no unmasked PII unless `meta.masked: true`. |
-| **Confidential** (example) | Internal sensitive domains (finance). | Allowed: PII permitted when listed in `pii_allowed`. |
+| Zone | Typical use | Policy | validate behavior |
+|------|-------------|--------|-------------------|
+| **raw_data** | Landing, source mirrors | `pii_allowed` | Skipped — PII declared here |
+| **layers / dwh** | Internal refinement | *(neutral)* | Skipped — not a consumption boundary |
+| **confidential** | Regulated internal domains | `pii_allowed` | Skipped — PII explicitly allowed |
+| **analysis** | BI, dashboards, exports | `pii_restricted` | **Gated** — unmasked PII lineage fails |
 
-Architecture and flow diagrams: [docs/README.md](docs/README.md).
+Full architecture: [docs/README.md](docs/README.md).
+
+---
+
+## Lineage propagation and the gate
+
+PII is declared at the **source**. Sensitivity **propagates downstream** through every model that depends on it. The gate only evaluates models in **restricted** folders.
+
+```mermaid
+flowchart BT
+  SRC["source.raw_clientes<br/>column cpf: security_tag pii"]
+  STG["stg_clientes<br/>inherits PII"]
+  DWH["dim_customer<br/>neutral layer"]
+  CF["confidential_finance<br/>pii_allowed"]
+  ANA["analysis_clientes<br/>pii_restricted"]
+
+  SRC --> STG
+  STG --> DWH
+  DWH --> CF
+  DWH --> ANA
+
+  CF --> R1["no gate — allowed zone"]
+  ANA --> R2{IsSensitive?}
+  R2 -->|yes| R3{meta.masked?}
+  R3 -->|no| R4["violation + lineage path"]
+  R3 -->|yes| R5["pass"]
+  R2 -->|no| R5
+```
+
+Example violation path:
+
+```
+analysis_clientes -> stg_clientes -> source.raw_clientes
+```
+
+---
+
+## Three commands, three questions
+
+Use the right command depending on what you need to audit or enforce.
+
+```mermaid
+flowchart TB
+  IN[(manifest.json)]
+
+  IN --> CMD1[dbt-guard manifest]
+  IN --> CMD2[dbt-guard sensitive]
+  IN --> CMD3[dbt-guard validate]
+
+  CMD1 --> Q1["Who DECLARES PII<br/>in the contract?"]
+  CMD2 --> Q2["Who INHERITS PII<br/>through depends_on?"]
+  CMD3 --> Q3["Do RESTRICTED models<br/>expose unmasked PII?"]
+
+  Q1 --> O1[List of unique_id]
+  Q2 --> O2[List of sensitive nodes]
+  Q3 --> O3["exit 0 or exit 1<br/>CI gate"]
+```
+
+| Command | Scope | Use when |
+|---------|-------|----------|
+| `manifest` | Declared PII only | Auditing the contract; no lineage walk |
+| `sensitive` | Declared + inherited PII | Impact analysis; "what is touched by this source?" |
+| `validate` | Restricted layers only | **PR/CI gate** before merge or deploy |
+
+Directory mode (`dbt-guard [path]`) scans `sources.yml` **before** compile — useful to verify column tags without a manifest.
 
 ---
 
@@ -58,10 +166,10 @@ git clone https://github.com/renatocruz/dbt-guard.git
 cd dbt-guard
 go build -o dbt-guard ./cmd/dbt-guard
 
-# List PII columns from sources.yml
+# PII columns from sources.yml
 ./dbt-guard ./examples
 
-# Validate analysis layer (expect exit 1 on the sample project)
+# CI gate on sample fixture (expect exit 1)
 ./dbt-guard validate internal/parser/testdata/manifest_minimal.json
 ```
 
@@ -94,9 +202,9 @@ go run ./cmd/dbt-guard ./examples
 |---------|-------------|
 | `dbt-guard [path]` | Print PII column names from `sources.yml` (recursive search). |
 | `dbt-guard manifest <manifest.json>` | Print `unique_id` of nodes/sources that **declare** PII. |
-| `dbt-guard sensitive <manifest.json>` | Print all **sensitive** nodes (declare PII or descend from PII), via DFS. |
+| `dbt-guard sensitive <manifest.json>` | Print all **sensitive** nodes (declare or inherit PII), via DFS. |
 | `dbt-guard validate <manifest.json>` | Gate **restricted** layers; exit 1 on unmasked PII lineage. |
-| `dbt-guard validate --config dbt-guard.yml <manifest.json>` | Use custom layer policy from YAML. |
+| `dbt-guard validate --config dbt-guard.yml <manifest.json>` | Apply custom layer policy from YAML. |
 | `dbt-guard validate --allowed confidential --restricted analysis <manifest.json>` | CLI layer overrides (comma-separated). |
 
 ### Example output (`validate`)
@@ -106,9 +214,9 @@ go run ./cmd/dbt-guard ./examples
   lineage: model.dbt_guard_example.analysis_clientes -> model.dbt_guard_example.stg_clientes -> source.dbt_guard_example.raw.raw_clientes
 ```
 
-### Layer policy
+### Layer policy (`dbt-guard.yml`)
 
-By default, only models under **`/analysis/`** are gated (backward compatible). Configure allowed and restricted layers in `dbt-guard.yml`:
+Default (no config): only paths containing `/analysis/` are restricted.
 
 ```yaml
 layers:
@@ -124,7 +232,22 @@ layers:
 dbt-guard validate target/manifest.json --config dbt-guard.yml
 ```
 
-Paths match `original_file_path` in the manifest (e.g. `models/analysis/foo.sql`). Allowed layers take precedence over restricted. See [examples/dbt-guard.yml](examples/dbt-guard.yml).
+Paths match `original_file_path` in the manifest (e.g. `models/analysis/foo.sql`). **Allowed takes precedence** over restricted when both match. Example: [examples/dbt-guard.yml](examples/dbt-guard.yml).
+
+### How validate decides (per model)
+
+```mermaid
+flowchart TD
+  START[For each model in manifest] --> PATH{original_file_path<br/>matches pii_allowed?}
+  PATH -->|yes| SKIP1[skip — allowed zone]
+  PATH -->|no| REST{matches pii_restricted?}
+  REST -->|no| SKIP2[skip — neutral zone]
+  REST -->|yes| SENS{IsSensitive<br/>DFS lineage?}
+  SENS -->|no| PASS[pass]
+  SENS -->|yes| MASK{meta.masked true?}
+  MASK -->|yes| PASS
+  MASK -->|no| FAIL[violation — exit 1]
+```
 
 ### CI example (GitHub Actions)
 
@@ -160,10 +283,9 @@ columns:
         security_tag: pii
 ```
 
-To allow PII lineage into an analysis model, mark the **model** as masked in the manifest (via dbt `meta`):
+To permit PII lineage in a **restricted** model, set model-level masking (via `schema.yml` or model config):
 
 ```yaml
-# in schema.yml or model config
 meta:
   masked: true
 ```
@@ -176,11 +298,12 @@ meta:
 dbt-guard/
 ├── cmd/dbt-guard/          # CLI entrypoint
 ├── internal/
+│   ├── config/             # LayerPolicy, dbt-guard.yml loader
 │   ├── parser/             # manifest.json, sources.yml, lineage (DFS)
-│   └── validator/          # analysis-layer rules
-├── examples/               # minimal dbt project (source → staging → analysis)
+│   └── validator/          # restricted-layer gate rules
+├── examples/               # minimal dbt project + sample dbt-guard.yml
 ├── scripts/test-e2e.sh     # end-to-end CLI tests
-└── docs/                   # architecture, roadmap
+└── docs/                   # architecture, testing, roadmap
 ```
 
 ---
@@ -204,6 +327,7 @@ Debug in VS Code/Cursor: launch configuration **"Launch dbt-guard"** (points at 
 | Document | Contents |
 |----------|----------|
 | [docs/README.md](docs/README.md) | Architecture, flows, lineage graph, layer rules. |
+| [docs/TESTING.md](docs/TESTING.md) | Unit, E2E, and real-world test scenarios. |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Implementation status (parser, DFS, validate). |
 | [examples/README.md](examples/README.md) | Example dbt project and test scenarios. |
 
@@ -211,7 +335,7 @@ Debug in VS Code/Cursor: launch configuration **"Launch dbt-guard"** (points at 
 
 ## Roadmap
 
-Phases 1–3 (manifest parser, DFS propagation, `validate` gate) are implemented. Details: [docs/ROADMAP.md](docs/ROADMAP.md).
+Phases 1–3 (manifest parser, DFS propagation, `validate` gate + layer policy) are implemented. Details: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ---
 
