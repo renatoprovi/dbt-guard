@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 )
 
 // Manifest represents a dbt manifest.json (v10+).
@@ -153,21 +152,6 @@ func isMaskedMeta(meta MetaMap) bool {
 	}
 	b, _ := v.(bool)
 	return b
-}
-
-// AnalysisNodeIDs returns unique_id values for nodes under the analysis folder
-// (original_file_path contains "/analysis/").
-func (m *Manifest) AnalysisNodeIDs() []string {
-	var out []string
-	for id, n := range m.Nodes {
-		if n == nil {
-			continue
-		}
-		if strings.Contains(n.OriginalFilePath, "/analysis/") {
-			out = append(out, id)
-		}
-	}
-	return out
 }
 
 // PrintManifestPII loads the manifest at path and prints unique_id values for nodes and sources tagged as PII.

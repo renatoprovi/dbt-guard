@@ -1,0 +1,6 @@
+layers:
+  pii_allowed:
+    - "/models/raw_data/"
+    - "/models/confidential/"
+  pii_restricted:
+    - "/models/analysis/"

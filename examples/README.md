@@ -1,46 +1,73 @@
-# Projeto dbt de exemplo (dbt-guard)
+# Example dbt project
 
-Projeto dbt **real** e mínimo para testar a ferramenta de governança (PII e linhagem). Visão geral do dbt-guard e comandos: [README principal](../README.md). Estrutura:
+Minimal **real** dbt project for testing dbt-guard governance (PII contract + lineage + layer policy). Main documentation: [README](../README.md).
 
-- **Source:** `models/sources.yml` — tabela `raw_clientes` com colunas `cpf` (meta.security_tag: pii) e `nome`.
-- **Staging:** `models/staging/stg_clientes.sql` — `SELECT *` da source.
-- **Analysis:** `models/analysis/analysis_clientes.sql` — `SELECT cpf AS documento_aluno, nome FROM ref('stg_clientes')`.
+## Model graph
 
-O **manifest** não vem versionado: é gerado pelo próprio dbt ao rodar `dbt compile` nesta pasta. Se você **não tem dbt instalado**, use os manifests de teste do repositório (veja abaixo).
+| Layer | Path | Description |
+|-------|------|-------------|
+| Source | `models/sources.yml` | `raw_clientes`: `cpf` tagged `meta.security_tag: pii`, `nome` public. |
+| Staging | `models/staging/stg_clientes.sql` | Selects from source; inherits PII sensitivity. |
+| Analysis | `models/analysis/analysis_clientes.sql` | Exposes `cpf` as `documento_aluno` — **restricted** by default. |
 
----
+`manifest.json` is **not** versioned. Generate it with `dbt compile`, or use repo fixtures under `internal/parser/testdata/`.
 
-## Testar o dbt-guard (sem precisar do dbt)
+## Layer policy file
 
-Na **raiz do repositório** (`dbt-guard/`). O comando 1 usa a pasta `examples`; os comandos 2–4 usam manifests de teste que já vêm no repo (mesmo grafo do examples).
+[dbt-guard.yml](dbt-guard.yml) shows a multi-zone warehouse policy:
 
-```bash
-# 1. Colunas PII nos YAML (só precisa da pasta examples)
-go run ./cmd/dbt-guard examples
-# → cpf
-
-# 2. IDs que declaram PII no manifest
-go run ./cmd/dbt-guard manifest internal/parser/testdata/manifest_minimal.json
-# → source.dbt_guard_example.raw.raw_clientes
-
-# 3. Nós sensíveis (DFS)
-go run ./cmd/dbt-guard sensitive internal/parser/testdata/manifest_minimal.json
-# → 3 IDs (source + stg_clientes + analysis_clientes)
-
-# 4. Validate (deve falhar: analysis sem mascaramento)
-go run ./cmd/dbt-guard validate internal/parser/testdata/manifest_minimal.json
-# → exit 1 + mensagem de violação
-
-# 4b. Validate com modelo mascarado (deve passar)
-go run ./cmd/dbt-guard validate internal/parser/testdata/manifest_analysis_masked.json
-# → exit 0
+```yaml
+layers:
+  pii_allowed:
+    - "/models/raw_data/"
+    - "/models/confidential/"
+  pii_restricted:
+    - "/models/analysis/"
 ```
 
+This example project only has `staging/` and `analysis/` folders. The config illustrates how production teams map **confidential** (PII allowed) vs **analysis** (PII blocked).
+
 ---
 
-## Testar com o manifest gerado pelo dbt (com dbt instalado)
+## Test without dbt installed
 
-Se você tem [dbt-core](https://docs.getdbt.com/docs/get-started/installation) instalado (ex.: `pip install dbt-core dbt-postgres`), pode gerar o manifest a partir deste projeto:
+From repository root (`dbt-guard/`):
+
+```bash
+# 1. PII columns from sources.yml
+go run ./cmd/dbt-guard examples
+# expected: cpf
+
+# 2. Nodes/sources that declare PII
+go run ./cmd/dbt-guard manifest internal/parser/testdata/manifest_minimal.json
+# expected: source.dbt_guard_example.raw.raw_clientes
+
+# 3. All sensitive nodes (DFS propagation)
+go run ./cmd/dbt-guard sensitive internal/parser/testdata/manifest_minimal.json
+# expected: source + stg_clientes + analysis_clientes
+
+# 4. Validate — default policy (/analysis/ restricted)
+go run ./cmd/dbt-guard validate internal/parser/testdata/manifest_minimal.json
+# expected: exit 1 (analysis model, unmasked PII lineage)
+
+# 4b. Validate — masked model passes
+go run ./cmd/dbt-guard validate internal/parser/testdata/manifest_analysis_masked.json
+# expected: exit 0
+
+# 5. Validate — custom layer policy from config
+go run ./cmd/dbt-guard validate \
+  internal/parser/testdata/manifest_with_confidential.json \
+  --config examples/dbt-guard.yml
+# expected: exit 1 (analysis only; confidential is pii_allowed)
+```
+
+Fixture `manifest_with_confidential.json` adds a model under `models/confidential/` that also descends from PII — it must **not** violate when `confidential` is in `pii_allowed`.
+
+---
+
+## Test with dbt compile
+
+Requires [dbt-core](https://docs.getdbt.com/docs/get-started/installation) (e.g. `pip install dbt-core dbt-postgres`):
 
 ```bash
 cd examples
@@ -48,15 +75,23 @@ DBT_PROFILES_DIR=. dbt compile
 cd ..
 ```
 
-Depois use `examples/target/manifest.json` nos comandos:
+Then run against the compiled manifest:
 
 ```bash
-# Lista os `unique_id` de nós e sources que declaram PII** no manifest (tag na source/coluna ou meta no nó). É o “quem está marcado como sensível no contrato”.
 go run ./cmd/dbt-guard manifest examples/target/manifest.json
-# Percorre o grafo de linhagem (`depends_on`) e lista tudo que é sensível por propagação: quem declara PII e quem **depende (direta ou indiretamente) dessa cadeia. É o “PII + tudo que herda essa sensibilidade”.
 go run ./cmd/dbt-guard sensitive examples/target/manifest.json
-# Foca na camada `analysis/`: se algum modelo público descende de PII e não tem `meta.masked: true`, falha com exit 1 e mostra modelo + caminho na linhagem. É o gate de PR/merge, não só uma listagem.
 go run ./cmd/dbt-guard validate examples/target/manifest.json
+go run ./cmd/dbt-guard validate examples/target/manifest.json --config examples/dbt-guard.yml
 ```
 
-O `profiles.yml` usa Postgres; para apenas compilar, o banco não precisa estar rodando.
+Postgres does not need to be running; `compile` only generates artifacts. `profiles.yml` targets Postgres for teams that also run `dbt run` locally.
+
+---
+
+## Command semantics (for governance reviews)
+
+| Command | Question it answers |
+|---------|---------------------|
+| `manifest` | Who **declares** PII in the contract/manifest? |
+| `sensitive` | Who **inherits** PII through lineage (direct + indirect)? |
+| `validate` | Do **restricted-layer** models expose unmasked PII? (CI gate) |

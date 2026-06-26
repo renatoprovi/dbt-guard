@@ -24,15 +24,25 @@ func main() {
 		}
 		return
 	}
-	if len(os.Args) >= 3 && os.Args[1] == "validate" {
-		violations, err := validator.RunValidate(os.Args[2])
+	if len(os.Args) >= 2 && os.Args[1] == "validate" {
+		opts, err := parseValidateArgs(os.Args[2:])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		policy, err := resolveLayerPolicy(opts)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		violations, err := validator.RunValidate(opts.ManifestPath, policy)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 		if len(violations) > 0 {
 			for _, v := range violations {
-				fmt.Fprintf(os.Stderr, "[dbt-guard] analysis model descends from PII without masking: %s\n", v.ModelID)
+				fmt.Fprintf(os.Stderr, "[dbt-guard] model in restricted layer descends from PII without masking: %s\n", v.ModelID)
 				fmt.Fprintf(os.Stderr, "  lineage: %s\n", strings.Join(v.LineagePath, " -> "))
 			}
 			os.Exit(1)

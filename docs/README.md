@@ -1,35 +1,42 @@
-# Arquitetura e fluxo do dbt-guard
+# Architecture and data flows
 
-Este documento descreve a arquitetura do projeto e os fluxos de dados (atual e planejado).
+Technical reference for data engineers operating dbt-guard as a **governance gate** on dbt lineage. The tool enforces a declarative PII contract (`sources.yml` + `manifest.json`) before models reach restricted consumption layers.
 
 ---
 
-## Visão geral
+## Overview
 
-O dbt-guard é uma CLI de governança que usa **contrato declarativo** (YAML/JSON do dbt) para auditar linhagem e impedir que PII alcance camadas públicas sem mascaramento.
+dbt-guard is a Go CLI that:
+
+1. Reads **PII declarations** from `sources.yml` and the dbt **manifest** (v10+).
+2. Builds a **directed lineage graph** from `depends_on`.
+3. **Propagates sensitivity** upstream-to-downstream via DFS (`IsSensitive`).
+4. **Gates restricted layers** on `validate`: models that inherit PII without explicit masking fail CI.
 
 ```mermaid
 flowchart LR
-    subgraph Entradas
+    subgraph Inputs
         A[sources.yml]
         B[manifest.json]
+        C[dbt-guard.yml]
     end
     subgraph dbt_guard["dbt-guard (Go)"]
-        C[Parser]
-        D[Validador]
+        P[Parser]
+        V[Validator]
     end
-    subgraph Saídas
-        E[Lista PII / Erros]
+    subgraph Outputs
+        E[PII lists / exit 1 violations]
     end
-    A --> C
-    B --> C
-    C --> D
-    D --> E
+    A --> P
+    B --> P
+    C --> V
+    P --> V
+    V --> E
 ```
 
 ---
 
-## Arquitetura de componentes
+## Component architecture
 
 ```mermaid
 flowchart TB
@@ -38,207 +45,194 @@ flowchart TB
     end
 
     subgraph Internal["internal/"]
+        subgraph Config["config/"]
+            LP[LayerPolicy]
+        end
         subgraph Parser["parser/"]
             P1[sources.yml]
             P2[manifest.json]
-            P3[FindSourceFiles]
-            P4[ParseSourceFile]
             P5[LoadManifest]
-            P6[CollectPIIColumns]
             P7[IsSensitive / DFS]
+            P8[RestrictedNodeIDs]
         end
         subgraph Validator["validator/"]
-            V1[Regras de validação]
-            V2[IsSensitive / DFS]
+            V1[RunValidate]
         end
     end
 
-    M --> P3
-    M --> P4
-    M --> P6
+    M --> P5
     M --> P7
-    M --> V1
-    P1 --> P4
-    P2 --> P5
+    M --> LP
+    LP --> V1
     P5 --> P7
-    P5 --> V2
-    P7 --> V2
-    P4 --> P6
-    V2 --> V1
+    P5 --> P8
+    P7 --> V1
+    P8 --> V1
 ```
 
-| Componente | Responsabilidade |
-|------------|------------------|
-| **CLI** | Recebe pasta ou caminho do manifest, invoca parser e validador, imprime resultado ou sai com código de erro. |
-| **Parser** | Lê `sources.yml` (recursivo) e `manifest.json`; expõe structs (SourceFile, Manifest, ManifestNode, SourceDef) e funções de busca/coleta de PII e de IDs com PII no manifest. |
-| **Validator** | (Em evolução) Aplica regras: propagação de sensibilidade (DFS), checagem de mascaramento, validação da camada `analysis`. |
+| Component | Responsibility |
+|-----------|----------------|
+| **CLI** | Dispatches commands; loads optional `dbt-guard.yml`; exits non-zero on policy violations. |
+| **config** | `LayerPolicy`: `pii_allowed`, `pii_restricted`; path matching on `original_file_path`. |
+| **parser** | Parses YAML/JSON; exposes manifest structs; implements lineage DFS and PII collection. |
+| **validator** | Applies layer policy + sensitivity + masking rules; returns violations with lineage paths. |
 
 ---
 
-## Fluxo atual
+## CLI modes
 
-### Modo sources.yml
+### Directory mode (`dbt-guard [path]`)
 
-O dbt-guard percorre uma pasta, encontra todos os `sources.yml`, faz parse e imprime o nome das colunas com `security_tag: pii`.
+Recursively finds `sources.yml`, parses column metadata, prints column names tagged `meta.security_tag: pii`. Useful for auditing the **data contract** before compile.
 
-### Modo manifest (Fase 1)
+### `manifest` — declared PII
 
-O comando `dbt-guard manifest <path>` carrega o `manifest.json` do dbt (v10+), identifica **nodes** e **sources** com tag PII (em `meta` ou em colunas) e imprime seus `unique_id`. Estruturas em `internal/parser/manifest.go`: `Manifest`, `ManifestNode`, `SourceDef`, `DependsOn`, `LoadManifest`, `NodeIDsWithPII`, `SourceIDsWithPII`.
+Loads `manifest.json`, prints `unique_id` of nodes/sources that **declare** PII (column meta or node meta). Does not walk lineage.
 
-### Modo sensitive (Fase 2 — DFS)
+Implementation: `internal/parser/manifest.go` — `LoadManifest`, `NodeIDsWithPII`, `SourceIDsWithPII`.
 
-O comando `dbt-guard sensitive <path>` carrega o manifest e imprime os `unique_id` de **todos** os nós e sources que são sensíveis: os que declaram PII ou que **descendem** (via `depends_on`) de algum que declara. A função **`IsSensitive(nodeID, manifest)`** em `internal/parser/lineage.go` percorre o grafo em DFS a partir de cada nó, seguindo os parents; usa cache por nodeID para evitar ciclos e reavaliação.
+### `sensitive` — propagated PII (DFS)
 
-### Modo validate (Fase 3 — Gatekeeper)
+Prints every node/source that **declares or inherits** PII by walking `depends_on` parents.
 
-O comando **`dbt-guard validate <path>`** carrega o manifest, identifica modelos em **`analysis/`** (por `original_file_path`), e para cada um que **descende de PII** (IsSensitive) e **não** está mascarado (`meta.masked: true` ou `config.meta.masked: true`) retorna um erro detalhado com o `unique_id` do modelo e o **caminho da linhagem** até a source/nó PII (`LineagePathToPII`). Usado em CI para impedir que PII chegue à camada de análise sem mascaramento.
+Implementation: `internal/parser/lineage.go` — `IsSensitive` with per-node cache.
 
-```mermaid
-sequenceDiagram
-    participant U as Usuário
-    participant CLI as CLI
-    participant Find as FindSourceFiles
-    participant Parse as ParseSourceFile
-    participant Collect as CollectPIIColumns
+### `validate` — restricted-layer gatekeeper
 
-    U->>CLI: dbt-guard ./caminho
-    CLI->>Find: FindSourceFiles(root)
-    Find-->>CLI: [paths...]
-    loop Para cada sources.yml
-        CLI->>Parse: ParseSourceFilePath(path)
-        Parse-->>CLI: *SourceFile
-        CLI->>Collect: CollectPIIColumns(path, sf)
-        Collect-->>CLI: []PIIColumn
-        CLI->>U: imprime nome da coluna
-    end
+```bash
+dbt-guard validate target/manifest.json [--config dbt-guard.yml] [--allowed a,b] [--restricted x,y]
 ```
 
-```mermaid
-flowchart LR
-    A[Pasta] --> B[Busca sources.yml]
-    B --> C[Parse YAML]
-    C --> D[Filtra meta.security_tag: pii]
-    D --> E[Imprime colunas]
+For each model in a **restricted** layer (and not in an **allowed** layer):
+
+1. If `IsSensitive(nodeID)` is true, and
+2. `meta.masked: true` (or `config.meta.masked`) is not set,
+
+→ record a violation with `LineagePathToPII` and exit 1.
+
+**Default policy** (no config): only paths containing `/analysis/` are restricted (backward compatible).
+
+**Custom policy** (`dbt-guard.yml`):
+
+```yaml
+layers:
+  pii_allowed:
+    - "/models/raw_data/"
+    - "/models/confidential/"
+  pii_restricted:
+    - "/models/analysis/"
 ```
+
+| Policy list | Effect on models matching `original_file_path` |
+|-------------|-----------------------------------------------|
+| `pii_allowed` | Skip validation; unmasked PII lineage is permitted. |
+| `pii_restricted` | Gate applies; unmasked PII lineage fails. |
+| *(omitted)* | **Neutral** — internal layers (`dwh`, `layers`); no gate. |
+
+Allowed patterns take precedence when both lists match.
 
 ---
 
-## Fluxo alvo (manifest + validação)
-
-Após o roadmap (Fase 1–3), o fluxo principal será: carregar o manifest, construir o grafo de linhagem, propagar PII por DFS e validar a camada `analysis`.
-
-```mermaid
-flowchart TB
-    subgraph Entrada
-        MF[manifest.json]
-    end
-    subgraph Carga
-        LM[LoadManifest]
-        G[Grafo de nodes + depends_on]
-    end
-    subgraph Propagação
-        DFS[DFS a partir de cada nó]
-        PII[IsSensitive?]
-    end
-    subgraph Validação
-        AM[Modelos em analysis/]
-        MASK[Possui mascaramento?]
-        ERRO[Erro detalhado]
-    end
-    MF --> LM
-    LM --> G
-    G --> DFS
-    DFS --> PII
-    PII --> AM
-    AM --> MASK
-    MASK -->|Não mascarado| ERRO
-```
+## Validate sequence
 
 ```mermaid
 sequenceDiagram
-    participant U as Usuário
+    participant U as Engineer / CI
     participant CLI as validate
+    participant CFG as LayerPolicy
     participant Load as LoadManifest
-    participant DFS as IsSensitive (DFS)
-    participant Check as Checa analysis + mascaramento
+    participant DFS as IsSensitive
+    participant Gate as RunValidate
 
-    U->>CLI: dbt-guard validate --manifest target/manifest.json
+    U->>CLI: dbt-guard validate --config dbt-guard.yml target/manifest.json
+    CLI->>CFG: LoadLayerPolicy + CLI overrides
     CLI->>Load: LoadManifest(path)
-    Load-->>CLI: *Manifest
-    loop Para cada modelo em analysis/
-        CLI->>DFS: IsSensitive(nodeID, manifest)
+    Load-->>CLI: Manifest graph
+    loop Each model in restricted layers
+        CLI->>DFS: IsSensitive(nodeID)
         DFS-->>CLI: bool
-        alt Sensível e não mascarado
-            CLI->>Check: detalhes do caminho
-            Check-->>CLI: erro
-            CLI->>U: exit 1 + mensagem
+        alt Sensitive and not masked
+            CLI->>Gate: LineagePathToPII
+            Gate-->>CLI: violation
+            CLI->>U: exit 1 + lineage
         end
     end
 ```
 
 ---
 
-## Grafo de linhagem (exemplo)
+## Lineage graph (example)
 
-O manifest do dbt descreve um **grafo direcionado**: sources e modelos são nós; `depends_on` são arestas. A propagação de PII sobe das sources (onde está declarado no YAML) até os modelos que dependem delas.
+The dbt manifest is a **directed acyclic graph**: sources and models are nodes; `depends_on.nodes` are edges pointing to parents.
 
 ```mermaid
 flowchart LR
-    subgraph Source["Source (declaração PII)"]
+    subgraph Source["Source (PII contract)"]
         S[raw.raw_clientes]
-        S -->|cpf: security_tag pii| S
     end
     subgraph Staging
         ST[stg_clientes]
     end
-    subgraph Analysis
+    subgraph Analysis["Analysis (restricted)"]
         AN[analysis_clientes]
+    end
+    subgraph Confidential["Confidential (allowed)"]
+        CF[finance_report]
     end
     S -->|depends_on| ST
     ST -->|depends_on| AN
-    AN -->|"documento_aluno (ex-cpf)"| AN
+    ST -->|depends_on| CF
 ```
 
-- **Source:** PII declarado em `sources.yml` (ex.: `cpf` com `meta.security_tag: pii`).
-- **Staging:** depende da source; herda sensibilidade.
-- **Analysis:** depende do staging; se expuser coluna PII sem tag de mascaramento, o validador deve falhar e reportar o caminho (ex.: `analysis_clientes` ← `stg_clientes` ← `raw.raw_clientes`).
+- **Source:** PII declared in `sources.yml` (`cpf` → `security_tag: pii`).
+- **Staging:** inherits sensitivity; neutral layer (no gate unless configured).
+- **Analysis:** restricted by default; unmasked PII → violation.
+- **Confidential:** allowed when listed in `pii_allowed`; PII permitted for finance/collections use cases.
 
 ---
 
-## Camadas e regras de governança
+## Layer governance model
 
 ```mermaid
 flowchart TB
-    subgraph Camadas
+    subgraph Layers
         direction TB
-        R[Raw / Source]
-        I[Intermediate / Staging]
-        A[Analysis / Pública]
+        R[Raw / Sources]
+        I[Intermediate / DWH]
+        C[Confidential]
+        A[Analysis / Public]
     end
-    R -->|"PII declarado (meta)"| R
     R --> I
+    I --> C
     I --> A
-    A -->|"Não pode expor PII sem mascaramento"| G[Gatekeeper]
-    G -->|OK| OK[exit 0]
-    G -->|Violação| FAIL[exit 1 + caminho da linhagem]
+    C -->|"pii_allowed"| OK1[PII OK]
+    A -->|"pii_restricted"| G[dbt-guard validate]
+    G -->|unmasked PII| FAIL[exit 1]
+    G -->|masked or clean| OK2[exit 0]
 ```
 
-| Camada | Papel | Regra |
-|--------|--------|--------|
-| **Source** | Contrato declarativo (sources.yml) | Colunas sensíveis com `meta.security_tag: pii`. |
-| **Staging / Intermediate** | Refinamento; pode repassar PII para camadas internas. | — |
-| **Analysis** | Dados expostos para consumo (relatórios, BI). | Não pode descender de PII sem estar explicitamente mascarado; caso contrário, o `validate` falha. |
+Typical warehouse layout for a data platform team:
+
+| Layer folder | Governance role | dbt-guard policy |
+|--------------|-------------------|------------------|
+| `models/raw_data/` | Landing / sources mirror | Usually `pii_allowed` (contract origin) |
+| `models/layers/`, `models/dwh/` | Internal refinement | Neutral (default) |
+| `models/confidential/` | Regulated internal consumers | `pii_allowed` |
+| `models/analysis/` | BI, self-service, exports | `pii_restricted` |
+
+Path matching uses `original_file_path` from the manifest (e.g. `models/analysis/report.sql`). Patterns are normalized to segment form (`/analysis/`).
 
 ---
 
-## Resumo
+## Artifact reference
 
-| Artefato | Função |
-|----------|--------|
-| **sources.yml** | Declara quais colunas são PII (contrato). |
-| **manifest.json** | Grafo de nós e `depends_on` (linhagem). |
-| **Parser** | Lê YAML e JSON; expõe structs e listas de colunas PII. |
-| **DFS / IsSensitive** | Propaga sensibilidade da source até o nó (grafo). |
-| **validate** | Garante que modelos em `analysis/` que descendem de PII tenham mascaramento; senão, erro com caminho da linhagem. |
+| Artifact | Role in governance |
+|----------|-------------------|
+| `sources.yml` | Declares which columns are PII (upstream contract). |
+| `manifest.json` | Authoritative lineage graph after `dbt compile`. |
+| `dbt-guard.yml` | Layer allow/restrict policy for your warehouse zones. |
+| `meta.masked: true` | Explicit approval for PII lineage in a restricted model. |
+| Parser / DFS | Computes inherited sensitivity independent of layer policy. |
+| `validate` | Enforces policy only on restricted layers; reports lineage on failure. |
 
-Os diagramas usam [Mermaid](https://mermaid.js.org/). Eles são renderizados no GitHub, no GitLab e em editores que suportam Mermaid (VS Code, Cursor com extensão).
+Diagrams use [Mermaid](https://mermaid.js.org/) (rendered on GitHub, GitLab, VS Code, Cursor).

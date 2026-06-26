@@ -1,0 +1,10 @@
+# Layer policy for dbt-guard validate
+# Paths match against manifest node original_file_path (folder segments).
+
+layers:
+  pii_allowed:
+    - "/models/raw_data/"
+    - "/models/confidential/"
+  pii_restricted:
+    - "/models/analysis/"
+  # models under layers/, dwh/, etc. are neutral (internal; not gated)

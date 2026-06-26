@@ -1,6 +1,6 @@
 # dbt-guard
 
-Governance CLI for [dbt](https://docs.getdbt.com/) projects. Audits lineage from `sources.yml` and `manifest.json`, propagates PII sensitivity through the dependency graph, and blocks unmasked sensitive data from reaching the public **analysis** layer.
+Governance CLI for [dbt](https://docs.getdbt.com/) projects. Audits lineage from `sources.yml` and `manifest.json`, propagates PII sensitivity through the dependency graph, and blocks unmasked sensitive data from reaching **restricted** consumption layers (configurable via `dbt-guard.yml`).
 
 Built for CI gates and data-contract enforcement (e.g. LGPD/GDPR-style PII controls).
 
@@ -13,7 +13,8 @@ Built for CI gates and data-contract enforcement (e.g. LGPD/GDPR-style PII contr
 - **Declarative PII contract** — tag sensitive columns in `sources.yml` (`meta.security_tag: pii`).
 - **Manifest lineage** — reads dbt `manifest.json` (v10+) and walks `depends_on` edges.
 - **Sensitivity propagation** — DFS marks every node that declares or inherits PII.
-- **Analysis gate** — `validate` fails (exit 1) when a model under `analysis/` descends from PII without `meta.masked: true`.
+- **Analysis gate** — `validate` fails (exit 1) when a model in a **restricted** layer descends from PII without `meta.masked: true`.
+- **Configurable layers** — allow PII in `confidential`, block in `analysis`, leave `dwh`/`layers` neutral via `dbt-guard.yml`.
 - **Single binary** — no Python runtime; easy to install in CI and local workflows.
 
 ---
@@ -43,7 +44,8 @@ flowchart TB
 |-------|------|------|
 | **Raw / Sources** | Contract in `sources.yml` | Columns tagged `meta.security_tag: pii`. |
 | **Staging / Intermediate** | Refinement; may pass PII internally. | — |
-| **Analysis** | Exposed to BI and reports. | Must not descend from PII unless `meta.masked: true`. |
+| **Analysis** | Exposed to BI and reports. | Restricted: no unmasked PII unless `meta.masked: true`. |
+| **Confidential** (example) | Internal sensitive domains (finance). | Allowed: PII permitted when listed in `pii_allowed`. |
 
 Architecture and flow diagrams: [docs/README.md](docs/README.md).
 
@@ -93,14 +95,36 @@ go run ./cmd/dbt-guard ./examples
 | `dbt-guard [path]` | Print PII column names from `sources.yml` (recursive search). |
 | `dbt-guard manifest <manifest.json>` | Print `unique_id` of nodes/sources that **declare** PII. |
 | `dbt-guard sensitive <manifest.json>` | Print all **sensitive** nodes (declare PII or descend from PII), via DFS. |
-| `dbt-guard validate <manifest.json>` | Gate **analysis/** models; exit 1 on unmasked PII lineage. |
+| `dbt-guard validate <manifest.json>` | Gate **restricted** layers; exit 1 on unmasked PII lineage. |
+| `dbt-guard validate --config dbt-guard.yml <manifest.json>` | Use custom layer policy from YAML. |
+| `dbt-guard validate --allowed confidential --restricted analysis <manifest.json>` | CLI layer overrides (comma-separated). |
 
 ### Example output (`validate`)
 
 ```
-[dbt-guard] analysis model descends from PII without masking: model.dbt_guard_example.analysis_clientes
+[dbt-guard] model in restricted layer descends from PII without masking: model.dbt_guard_example.analysis_clientes
   lineage: model.dbt_guard_example.analysis_clientes -> model.dbt_guard_example.stg_clientes -> source.dbt_guard_example.raw.raw_clientes
 ```
+
+### Layer policy
+
+By default, only models under **`/analysis/`** are gated (backward compatible). Configure allowed and restricted layers in `dbt-guard.yml`:
+
+```yaml
+layers:
+  pii_allowed:
+    - "/models/raw_data/"
+    - "/models/confidential/"   # finance, collections — PII OK
+  pii_restricted:
+    - "/models/analysis/"       # exposed BI — block unmasked PII
+  # layers/, dwh/, etc. omitted → neutral (internal, not gated)
+```
+
+```bash
+dbt-guard validate target/manifest.json --config dbt-guard.yml
+```
+
+Paths match `original_file_path` in the manifest (e.g. `models/analysis/foo.sql`). Allowed layers take precedence over restricted. See [examples/dbt-guard.yml](examples/dbt-guard.yml).
 
 ### CI example (GitHub Actions)
 
@@ -110,7 +134,7 @@ go run ./cmd/dbt-guard ./examples
   working-directory: my_dbt_project
 
 - name: dbt-guard validate
-  run: dbt-guard validate my_dbt_project/target/manifest.json
+  run: dbt-guard validate my_dbt_project/target/manifest.json --config my_dbt_project/dbt-guard.yml
 ```
 
 ---
