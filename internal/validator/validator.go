@@ -1,5 +1,5 @@
 package validator
 
-// Validator pode ser usado no futuro para regras de validação dos sources (ex.: todas as PII com teste).
-// Por ora o pacote existe para manter a estrutura de pastas solicitada.
+// Validator may be used in the future for source validation rules (e.g. every PII column has a test).
+// The package exists for now to keep the requested folder structure.
 type Validator struct{}

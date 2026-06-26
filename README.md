@@ -1,119 +1,204 @@
 # dbt-guard
 
-CLI em Go que audita o grafo de linhagem do dbt e bloqueia a publicação de dados sensíveis (PII) na camada de análise sem mascaramento, via contrato declarativo (sources + manifest) e conformidade com LGPD.
+Governance CLI for [dbt](https://docs.getdbt.com/) projects. Audits lineage from `sources.yml` and `manifest.json`, propagates PII sensitivity through the dependency graph, and blocks unmasked sensitive data from reaching the public **analysis** layer.
 
-**Requisitos:** [Go 1.22+](https://go.dev/dl/)
+Built for CI gates and data-contract enforcement (e.g. LGPD/GDPR-style PII controls).
+
+**Requirements:** [Go 1.22+](https://go.dev/dl/)
 
 ---
 
-## Visão geral
+## Features
 
-O dbt-guard lê o manifest.json do dbt (v10+) e os sources.yml, identifica fontes e nós com PII (meta.security_tag: pii), propaga a sensibilidade pelo grafo (DFS) e valida que modelos em analysis/ não exponham PII sem meta.masked: true. Indicado para CI como gate antes de merge.
+- **Declarative PII contract** — tag sensitive columns in `sources.yml` (`meta.security_tag: pii`).
+- **Manifest lineage** — reads dbt `manifest.json` (v10+) and walks `depends_on` edges.
+- **Sensitivity propagation** — DFS marks every node that declares or inherits PII.
+- **Analysis gate** — `validate` fails (exit 1) when a model under `analysis/` descends from PII without `meta.masked: true`.
+- **Single binary** — no Python runtime; easy to install in CI and local workflows.
 
-### Camadas do dbt e ponto de bloqueio
+---
 
-Fluxo: Raw (sources) → Staging/Intermediate → Analysis (pública). O dbt-guard valida na fronteira da camada pública: se um modelo em `analysis/` descende de PII e não está mascarado, `validate` retorna exit 1.
+## How it works
+
+Data flows from raw sources through staging/intermediate layers into the analysis (public) layer. **dbt-guard** runs at that boundary:
 
 ```mermaid
 flowchart TB
   subgraph raw [Raw / Sources]
-    R[(sources PII)]
+    R[(PII declared in sources.yml)]
   end
-  subgraph staging [Staging]
-    S[modelos]
+  subgraph staging [Staging / Intermediate]
+    S[models]
   end
-  subgraph analysis [Analysis Publica]
-    A[modelos]
+  subgraph analysis [Analysis / Public]
+    A[models]
   end
   R --> S --> A
   A --> G{dbt-guard validate}
-  G -->|sem mascaramento| B[exit 1]
-  G -->|mascarado| O[exit 0]
+  G -->|without masking| B[exit 1]
+  G -->|masked or no PII| O[exit 0]
 ```
 
-Tabela de camadas e regras: [docs/README.md](docs/README.md#camadas-e-regras-de-governança).
+| Layer | Role | Rule |
+|-------|------|------|
+| **Raw / Sources** | Contract in `sources.yml` | Columns tagged `meta.security_tag: pii`. |
+| **Staging / Intermediate** | Refinement; may pass PII internally. | — |
+| **Analysis** | Exposed to BI and reports. | Must not descend from PII unless `meta.masked: true`. |
 
-## Estrutura do projeto
+Architecture and flow diagrams: [docs/README.md](docs/README.md).
 
+---
+
+## Quick start
+
+```bash
+git clone https://github.com/renatocruz/dbt-guard.git
+cd dbt-guard
+go build -o dbt-guard ./cmd/dbt-guard
+
+# List PII columns from sources.yml
+./dbt-guard ./examples
+
+# Validate analysis layer (expect exit 1 on the sample project)
+./dbt-guard validate internal/parser/testdata/manifest_minimal.json
 ```
-dbt-guard/
-├── cmd/dbt-guard/       # CLI (main.go)
-├── internal/
-│   ├── parser/          # manifest.json, sources.yml, linhagem (DFS)
-│   └── validator/       # Regras (analysis + mascaramento)
-├── examples/            # Projeto dbt mínimo
-├── scripts/test-e2e.sh
-└── docs/
-```
 
-## Instalação
+---
+
+## Installation
 
 ```bash
 go build -o dbt-guard ./cmd/dbt-guard
 ```
 
-Opcional: copiar o binário para um diretório no PATH (ex.: `~/go/bin`, `/usr/local/bin`).
+Install globally (optional):
 
-## Uso
+```bash
+go install ./cmd/dbt-guard
+# or: cp dbt-guard ~/go/bin/  or  /usr/local/bin/
+```
 
-| Comando | Descrição |
-|---------|-----------|
-| `dbt-guard [pasta]` | Lista colunas PII a partir de `sources.yml`. |
-| `dbt-guard manifest <manifest.json>` | Lista unique_id de nodes/sources que declaram PII. |
-| `dbt-guard sensitive <manifest.json>` | Lista nós sensíveis (DFS). |
-| `dbt-guard validate <manifest.json>` | Valida analysis/: exit 1 se modelo descende de PII sem meta.masked: true. |
+Run without installing:
 
-Exemplo (raiz do repo): `./dbt-guard ./examples`, `./dbt-guard validate internal/parser/testdata/manifest_minimal.json`. Detalhes em [examples/README.md](examples/README.md).
+```bash
+go run ./cmd/dbt-guard ./examples
+```
 
-## Testes
+---
 
-- **Unitários:** `go test ./...`
-- **E2E (binário):** `./scripts/test-e2e.sh`
-- **Manuais e cenário real:** [examples/README.md](examples/README.md)
+## Usage
 
-## Contrato declarativo (PII no dbt)
+| Command | Description |
+|---------|-------------|
+| `dbt-guard [path]` | Print PII column names from `sources.yml` (recursive search). |
+| `dbt-guard manifest <manifest.json>` | Print `unique_id` of nodes/sources that **declare** PII. |
+| `dbt-guard sensitive <manifest.json>` | Print all **sensitive** nodes (declare PII or descend from PII), via DFS. |
+| `dbt-guard validate <manifest.json>` | Gate **analysis/** models; exit 1 on unmasked PII lineage. |
 
-O dbt-guard procura arquivos **`sources.yml`** e, em cada um, lê a estrutura `sources` → `tables` → `columns`. Uma coluna é considerada PII se tiver:
+### Example output (`validate`)
 
-- **`meta.security_tag: pii`**, ou  
-- **`config.meta.security_tag: pii`** (estilo dbt v1.10+)
+```
+[dbt-guard] analysis model descends from PII without masking: model.dbt_guard_example.analysis_clientes
+  lineage: model.dbt_guard_example.analysis_clientes -> model.dbt_guard_example.stg_clientes -> source.dbt_guard_example.raw.raw_clientes
+```
 
-Exemplo mínimo em uma coluna:
+### CI example (GitHub Actions)
+
+```yaml
+- name: dbt compile
+  run: dbt compile
+  working-directory: my_dbt_project
+
+- name: dbt-guard validate
+  run: dbt-guard validate my_dbt_project/target/manifest.json
+```
+
+---
+
+## Declarative contract
+
+In `sources.yml`, mark PII on columns:
 
 ```yaml
 columns:
-  - name: email
+  - name: cpf
     meta:
       security_tag: pii
 ```
 
-## Documentação
+dbt v1.10+ style:
 
-| Documento | Conteúdo |
-|-----------|----------|
-| [docs/README.md](docs/README.md) | Arquitetura, fluxos, grafo de linhagem e camadas. |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | Status das fases (parser, DFS, validate). |
-| [examples/README.md](examples/README.md) | Projeto dbt de exemplo e como testar. |
+```yaml
+columns:
+  - name: email
+    config:
+      meta:
+        security_tag: pii
+```
 
-## Desenvolvimento
+To allow PII lineage into an analysis model, mark the **model** as masked in the manifest (via dbt `meta`):
 
-- **Testes:** `go test ./...` e `./scripts/test-e2e.sh`
-- **Build:** `go build ./...` (debug: launch "Launch dbt-guard" no VS Code/Cursor).
+```yaml
+# in schema.yml or model config
+meta:
+  masked: true
+```
+
+---
+
+## Project layout
+
+```
+dbt-guard/
+├── cmd/dbt-guard/          # CLI entrypoint
+├── internal/
+│   ├── parser/             # manifest.json, sources.yml, lineage (DFS)
+│   └── validator/          # analysis-layer rules
+├── examples/               # minimal dbt project (source → staging → analysis)
+├── scripts/test-e2e.sh     # end-to-end CLI tests
+└── docs/                   # architecture, roadmap
+```
+
+---
+
+## Development
+
+```bash
+go test ./...              # unit tests
+./scripts/test-e2e.sh      # build + CLI smoke tests
+go build ./...             # compile all packages
+```
+
+Sample dbt project and manual testing: [examples/README.md](examples/README.md).
+
+Debug in VS Code/Cursor: launch configuration **"Launch dbt-guard"** (points at `examples/`).
+
+---
+
+## Documentation
+
+| Document | Contents |
+|----------|----------|
+| [docs/README.md](docs/README.md) | Architecture, flows, lineage graph, layer rules. |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Implementation status (parser, DFS, validate). |
+| [examples/README.md](examples/README.md) | Example dbt project and test scenarios. |
 
 ---
 
 ## Roadmap
 
-Status das fases (parser, DFS, validate): [docs/ROADMAP.md](docs/ROADMAP.md).
+Phases 1–3 (manifest parser, DFS propagation, `validate` gate) are implemented. Details: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ---
 
-## Contribuição
+## Contributing
 
-1. Abra uma issue para bugs ou sugestões.
-2. Envie um PR a partir da branch `main`; garanta que `go test ./...` e `go build ./...` passem.
-3. Use `gofmt` e as regras de lint do projeto (ex.: staticcheck).
+1. Open an issue for bugs or feature requests.
+2. Submit a PR against `main`; ensure `go test ./...` and `go build ./...` pass.
+3. Run `gofmt`; follow project lint rules (e.g. staticcheck).
 
-## Licença
+---
 
-Projeto em desenvolvimento; uso conforme política interna.
+## License
+
+Project under active development; use according to your organization's policy.

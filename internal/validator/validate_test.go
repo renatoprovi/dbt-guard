@@ -12,14 +12,14 @@ func TestRunValidate_Violation(t *testing.T) {
 		t.Fatalf("RunValidate: %v", err)
 	}
 	if len(violations) != 1 {
-		t.Fatalf("esperada 1 violação, obteve %d", len(violations))
+		t.Fatalf("expected 1 violation, got %d", len(violations))
 	}
 	v := violations[0]
 	if v.ModelID != "model.dbt_guard_example.analysis_clientes" {
 		t.Errorf("ModelID = %q", v.ModelID)
 	}
 	if len(v.LineagePath) != 3 {
-		t.Errorf("esperado 3 nós no caminho, obteve %d: %v", len(v.LineagePath), v.LineagePath)
+		t.Errorf("expected 3 nodes in path, got %d: %v", len(v.LineagePath), v.LineagePath)
 	}
 	if v.LineagePath[0] != "model.dbt_guard_example.analysis_clientes" ||
 		v.LineagePath[1] != "model.dbt_guard_example.stg_clientes" ||
@@ -35,6 +35,6 @@ func TestRunValidate_MaskedNoViolation(t *testing.T) {
 		t.Fatalf("RunValidate: %v", err)
 	}
 	if len(violations) != 0 {
-		t.Errorf("esperado 0 violações (modelo mascarado), obteve %d: %v", len(violations), violations)
+		t.Errorf("expected 0 violations (masked model), got %d: %v", len(violations), violations)
 	}
 }

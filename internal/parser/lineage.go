@@ -1,9 +1,9 @@
 package parser
 
-// IsSensitive indica se o nó nodeID descende de algum nó ou source com security_tag: pii.
-// Percorre o grafo em profundidade (DFS) a partir de nodeID seguindo depends_on (parents).
-// Se algum ancestral for uma source com coluna PII ou um node com meta.security_tag: pii,
-// retorna true. Usa cache por nodeID para evitar ciclos e reavaliação (cada nó é avaliado no máximo uma vez).
+// IsSensitive reports whether nodeID descends from any node or source with security_tag: pii.
+// It walks the graph depth-first (DFS) from nodeID following depends_on (parents).
+// Returns true if any ancestor is a source with a PII column or a node with meta.security_tag: pii.
+// Uses a per-nodeID cache to avoid cycles and re-evaluation (each node is evaluated at most once).
 func IsSensitive(nodeID string, m *Manifest) bool {
 	if m == nil {
 		return false
@@ -44,8 +44,8 @@ func isSensitiveDFS(nodeID string, m *Manifest, cache map[string]bool) bool {
 	return false
 }
 
-// LineagePathToPII retorna um caminho de nodeID até uma source/nó PII (primeiro encontrado em DFS).
-// O slice retornado é [nodeID, ... parent ..., piiNodeID]. Vazio se o nó não descende de PII.
+// LineagePathToPII returns a path from nodeID to a PII source/node (first match in DFS).
+// The returned slice is [nodeID, ... parent ..., piiNodeID]. Empty if the node does not descend from PII.
 func LineagePathToPII(nodeID string, m *Manifest) []string {
 	if m == nil {
 		return nil

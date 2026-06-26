@@ -4,14 +4,14 @@ import (
 	"github.com/renatocruz/dbt-guard/internal/parser"
 )
 
-// Violation representa um modelo na camada analysis que descende de PII sem mascaramento.
+// Violation represents an analysis-layer model that descends from PII without masking.
 type Violation struct {
-	ModelID     string   // unique_id do modelo
-	LineagePath []string // caminho do modelo até uma source/nó PII
+	ModelID     string   // model unique_id
+	LineagePath []string // path from the model to a PII source/node
 }
 
-// RunValidate carrega o manifest, identifica modelos em analysis/, e retorna violações:
-// modelos que descendem de PII e não estão marcados como mascarados (meta.masked).
+// RunValidate loads the manifest, finds models under analysis/, and returns violations:
+// models that descend from PII and are not explicitly masked (meta.masked).
 func RunValidate(manifestPath string) ([]Violation, error) {
 	m, err := parser.LoadManifest(manifestPath)
 	if err != nil {

@@ -7,7 +7,7 @@ import (
 
 const sourcesFileName = "sources.yml"
 
-// FindSourceFiles percorre root recursivamente e retorna os caminhos de todos os arquivos sources.yml.
+// FindSourceFiles walks root recursively and returns paths to every sources.yml file.
 func FindSourceFiles(root string) ([]string, error) {
 	var paths []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {

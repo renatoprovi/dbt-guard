@@ -2,7 +2,7 @@ package parser
 
 import "fmt"
 
-// PIIColumn descreve uma coluna marcada como PII em um arquivo/tabela.
+// PIIColumn describes a column marked as PII in a file/table.
 type PIIColumn struct {
 	FilePath string
 	Source   string
@@ -10,7 +10,7 @@ type PIIColumn struct {
 	Column   string
 }
 
-// CollectPIIColumns percorre um SourceFile e retorna todas as colunas com security_tag pii.
+// CollectPIIColumns walks a SourceFile and returns every column with security_tag pii.
 func CollectPIIColumns(filePath string, sf *SourceFile) []PIIColumn {
 	var out []PIIColumn
 	for _, src := range sf.Sources {
@@ -30,7 +30,7 @@ func CollectPIIColumns(filePath string, sf *SourceFile) []PIIColumn {
 	return out
 }
 
-// PrintPIIColumns encontra todos os sources.yml em root, faz parse e imprime o nome de cada coluna PII.
+// PrintPIIColumns finds all sources.yml files under root, parses them, and prints each PII column name.
 func PrintPIIColumns(root string) error {
 	paths, err := FindSourceFiles(root)
 	if err != nil {

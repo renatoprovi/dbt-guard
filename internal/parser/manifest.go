@@ -7,15 +7,15 @@ import (
 	"strings"
 )
 
-// Manifest representa o manifest.json do dbt (v10+).
-// Apenas nodes e sources são mapeados; o decoder ignora o resto (otimização de memória).
+// Manifest represents a dbt manifest.json (v10+).
+// Only nodes and sources are mapped; the decoder ignores the rest (memory optimization).
 type Manifest struct {
 	Metadata json.RawMessage          `json:"metadata,omitempty"`
 	Nodes    map[string]*ManifestNode `json:"nodes"`
 	Sources  map[string]*SourceDef    `json:"sources"`
 }
 
-// ManifestNode representa um nó do grafo (model, analysis, seed, etc.).
+// ManifestNode represents a graph node (model, analysis, seed, etc.).
 type ManifestNode struct {
 	UniqueID         string      `json:"unique_id"`
 	ResourceType     string      `json:"resource_type"`
@@ -25,24 +25,24 @@ type ManifestNode struct {
 	OriginalFilePath string      `json:"original_file_path,omitempty"`
 	Name             string      `json:"name,omitempty"`
 	Fqn              []string    `json:"fqn,omitempty"`
-	// Campos não usados na linhagem podem ser ignorados; o decoder preenche só o que existe.
+	// Fields unused for lineage can be omitted; the decoder fills only what exists.
 }
 
-// DependsOn contém as dependências do nó (parents no grafo).
+// DependsOn holds node dependencies (parents in the graph).
 type DependsOn struct {
 	Nodes  []string `json:"nodes"`
 	Macros []string `json:"macros"`
 }
 
-// MetaMap armazena meta (ex.: security_tag) como chave/valor.
+// MetaMap stores meta fields (e.g. security_tag) as key/value pairs.
 type MetaMap map[string]interface{}
 
-// ConfigMeta é o bloco config do dbt (v1.10+); meta pode estar aqui.
+// ConfigMeta is the dbt config block (v1.10+); meta may live here.
 type ConfigMeta struct {
 	Meta MetaMap `json:"meta,omitempty"`
 }
 
-// SourceDef representa uma source no manifest (fonte de dados declarada).
+// SourceDef represents a source in the manifest (declared data source).
 type SourceDef struct {
 	UniqueID         string                `json:"unique_id"`
 	SourceName       string                `json:"source_name"`
@@ -52,14 +52,14 @@ type SourceDef struct {
 	OriginalFilePath string                `json:"original_file_path,omitempty"`
 }
 
-// ColumnInfo descreve uma coluna (ex.: em uma source); meta pode conter security_tag.
+// ColumnInfo describes a column (e.g. on a source); meta may contain security_tag.
 type ColumnInfo struct {
 	Meta   MetaMap     `json:"meta,omitempty"`
 	Config *ConfigMeta `json:"config,omitempty"`
 }
 
-// LoadManifest lê o arquivo em path e faz unmarshal para Manifest.
-// Usa apenas os campos mapeados nas structs; o resto não é alocado (decoder ignora).
+// LoadManifest reads the file at path and unmarshals it into Manifest.
+// Only mapped struct fields are allocated; the decoder ignores the rest.
 func LoadManifest(path string) (*Manifest, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -78,7 +78,7 @@ func LoadManifest(path string) (*Manifest, error) {
 	return &m, nil
 }
 
-// NodeIDsWithPII retorna os unique_id dos nós (models, etc.) que têm meta.security_tag == "pii".
+// NodeIDsWithPII returns unique_id values for nodes (models, etc.) with meta.security_tag == "pii".
 func (m *Manifest) NodeIDsWithPII() []string {
 	var out []string
 	for id, n := range m.Nodes {
@@ -92,7 +92,7 @@ func (m *Manifest) NodeIDsWithPII() []string {
 	return out
 }
 
-// SourceIDsWithPII retorna os unique_id das sources que possuem alguma coluna com security_tag == "pii".
+// SourceIDsWithPII returns unique_id values for sources that have at least one column with security_tag == "pii".
 func (m *Manifest) SourceIDsWithPII() []string {
 	var out []string
 	for id, s := range m.Sources {
@@ -106,7 +106,7 @@ func (m *Manifest) SourceIDsWithPII() []string {
 	return out
 }
 
-// HasPIIColumn retorna true se alguma coluna da source tiver meta.security_tag == "pii".
+// HasPIIColumn reports whether any column on the source has meta.security_tag == "pii".
 func (s *SourceDef) HasPIIColumn() bool {
 	for _, c := range s.Columns {
 		if hasPIITag(c.Meta) || (c.Config != nil && hasPIITag(c.Config.Meta)) {
@@ -128,8 +128,8 @@ func hasPIITag(meta MetaMap) bool {
 	return tag == "pii"
 }
 
-// IsNodeMasked retorna true se o nó está explicitamente marcado como mascarado
-// (meta.masked ou config.meta.masked == true). Usado pelo validador da camada analysis.
+// IsNodeMasked reports whether the node is explicitly marked as masked
+// (meta.masked or config.meta.masked == true). Used by the analysis-layer validator.
 func IsNodeMasked(n *ManifestNode) bool {
 	if n == nil {
 		return false
@@ -155,8 +155,8 @@ func isMaskedMeta(meta MetaMap) bool {
 	return b
 }
 
-// AnalysisNodeIDs retorna os unique_id dos nós que estão na pasta analysis
-// (original_file_path contém "/analysis/").
+// AnalysisNodeIDs returns unique_id values for nodes under the analysis folder
+// (original_file_path contains "/analysis/").
 func (m *Manifest) AnalysisNodeIDs() []string {
 	var out []string
 	for id, n := range m.Nodes {
@@ -170,8 +170,8 @@ func (m *Manifest) AnalysisNodeIDs() []string {
 	return out
 }
 
-// PrintManifestPII carrega o manifest em path e imprime os unique_id de nós e sources com tag PII.
-// Usado pelo comando "dbt-guard manifest <path>".
+// PrintManifestPII loads the manifest at path and prints unique_id values for nodes and sources tagged as PII.
+// Used by the "dbt-guard manifest <path>" command.
 func PrintManifestPII(path string) error {
 	m, err := LoadManifest(path)
 	if err != nil {
@@ -186,9 +186,9 @@ func PrintManifestPII(path string) error {
 	return nil
 }
 
-// PrintSensitiveNodes carrega o manifest e imprime os unique_id de todos os nós e sources
-// que são sensíveis (descendem de PII ou são PII). Usa IsSensitive (DFS).
-// Usado pelo comando "dbt-guard sensitive <path>".
+// PrintSensitiveNodes loads the manifest and prints unique_id values for all nodes and sources
+// that are sensitive (declare PII or descend from PII). Uses IsSensitive (DFS).
+// Used by the "dbt-guard sensitive <path>" command.
 func PrintSensitiveNodes(path string) error {
 	m, err := LoadManifest(path)
 	if err != nil {

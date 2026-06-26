@@ -6,43 +6,43 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// SourceFile representa o conteúdo de um arquivo YAML de sources do dbt (ex.: sources.yml).
+// SourceFile represents the contents of a dbt sources YAML file (e.g. sources.yml).
 type SourceFile struct {
 	Version int      `yaml:"version,omitempty"`
 	Sources []Source `yaml:"sources"`
 }
 
-// Source representa um source do dbt (schema/tabelas de origem).
+// Source represents a dbt source (origin schema/tables).
 type Source struct {
 	Name   string  `yaml:"name"`
 	Schema string  `yaml:"schema,omitempty"`
 	Tables []Table `yaml:"tables"`
 }
 
-// Table representa uma tabela dentro de um source.
+// Table represents a table within a source.
 type Table struct {
 	Name    string   `yaml:"name"`
 	Columns []Column `yaml:"columns"`
 }
 
-// Column representa uma coluna; meta guarda security_tag (ex.: pii).
+// Column represents a column; meta holds security_tag (e.g. pii).
 type Column struct {
 	Name   string        `yaml:"name"`
 	Meta   *ColumnMeta   `yaml:"meta,omitempty"`
 	Config *ColumnConfig `yaml:"config,omitempty"`
 }
 
-// ColumnMeta contém metadados da coluna, incluindo security_tag.
+// ColumnMeta holds column metadata, including security_tag.
 type ColumnMeta struct {
 	SecurityTag string `yaml:"security_tag"`
 }
 
-// ColumnConfig é o bloco config do dbt (v1.10+); meta pode estar aqui.
+// ColumnConfig is the dbt config block (v1.10+); meta may live here.
 type ColumnConfig struct {
 	Meta *ColumnMeta `yaml:"meta,omitempty"`
 }
 
-// ParseSourceFile lê e faz parse do conteúdo YAML de um arquivo de sources.
+// ParseSourceFile parses YAML content from a sources file.
 func ParseSourceFile(content []byte) (*SourceFile, error) {
 	var f SourceFile
 	if err := yaml.Unmarshal(content, &f); err != nil {
@@ -51,7 +51,7 @@ func ParseSourceFile(content []byte) (*SourceFile, error) {
 	return &f, nil
 }
 
-// ParseSourceFilePath lê o arquivo no caminho dado e faz parse.
+// ParseSourceFilePath reads and parses the file at the given path.
 func ParseSourceFilePath(path string) (*SourceFile, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -60,8 +60,8 @@ func ParseSourceFilePath(path string) (*SourceFile, error) {
 	return ParseSourceFile(content)
 }
 
-// SecurityTag retorna a security_tag da coluna (meta ou config.meta).
-// Retorna string vazia se não houver tag.
+// SecurityTag returns the column security_tag (meta or config.meta).
+// Returns an empty string when no tag is set.
 func (c *Column) SecurityTag() string {
 	if c.Meta != nil && c.Meta.SecurityTag != "" {
 		return c.Meta.SecurityTag
@@ -72,7 +72,7 @@ func (c *Column) SecurityTag() string {
 	return ""
 }
 
-// IsPII retorna true se a coluna tiver security_tag == "pii".
+// IsPII reports whether the column has security_tag == "pii".
 func (c *Column) IsPII() bool {
 	return c.SecurityTag() == "pii"
 }
