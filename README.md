@@ -350,9 +350,7 @@ Phases 1–3 (manifest parser, DFS propagation, `validate` gate + layer policy) 
 
 ## Contributing
 
-1. Open an issue for bugs or feature requests.
-2. Submit a PR against `main`; ensure `go test ./...` and `go build ./...` pass.
-3. Run `gofmt`; follow project lint rules (e.g. staticcheck).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, coding checklist, and review process. This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). Found a security issue? See [SECURITY.md](SECURITY.md).
 
 ---
 

@@ -1,0 +1,32 @@
+name: Bug report
+description: Something in dbt-guard isn't working as documented.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you run, what did you expect, what did you get instead?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: dbt-guard version
+      description: Output of `dbt-guard --version`, or the commit/tag if built from source.
+    validations:
+      required: true
+  - type: textarea
+    id: manifest-snippet
+    attributes:
+      label: Relevant manifest.json / dbt-guard.yml snippet
+      description: The smallest reproducible snippet. Redact anything sensitive (table/column names, real PII).
+      render: json
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and output
+      description: The exact `dbt-guard` command you ran and its full output.
+      render: shell
+    validations:
+      required: true
