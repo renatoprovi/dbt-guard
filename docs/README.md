@@ -168,13 +168,13 @@ The dbt manifest is a **directed acyclic graph**: sources and models are nodes; 
 ```mermaid
 flowchart LR
     subgraph Source["Source (PII contract)"]
-        S[raw.raw_clientes]
+        S[raw.raw_customers]
     end
     subgraph Staging
-        ST[stg_clientes]
+        ST[stg_customers]
     end
     subgraph Analysis["Analysis (restricted)"]
-        AN[analysis_clientes]
+        AN[analysis_customers]
     end
     subgraph Confidential["Confidential (allowed)"]
         CF[finance_report]
@@ -184,7 +184,7 @@ flowchart LR
     ST -->|depends_on| CF
 ```
 
-- **Source:** PII declared in `sources.yml` (`cpf` → `security_tag: pii`).
+- **Source:** PII declared in `sources.yml` (`ssn` → `security_tag: pii`).
 - **Staging:** inherits sensitivity; neutral layer (no gate unless configured).
 - **Analysis:** restricted by default; unmasked PII → violation.
 - **Confidential:** allowed when listed in `pii_allowed`; PII permitted for finance/collections use cases.

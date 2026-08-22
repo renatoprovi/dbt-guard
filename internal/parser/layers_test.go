@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/renatocruz/dbt-guard/internal/config"
+	"github.com/renatoprovi/dbt-guard/internal/config"
 )
 
 func TestRestrictedNodeIDs_DefaultPolicy(t *testing.T) {
@@ -17,7 +17,7 @@ func TestRestrictedNodeIDs_DefaultPolicy(t *testing.T) {
 	if len(ids) != 1 {
 		t.Fatalf("expected 1 restricted node, got %d: %v", len(ids), ids)
 	}
-	if ids[0] != "model.dbt_guard_example.analysis_clientes" {
+	if ids[0] != "model.dbt_guard_example.analysis_customers" {
 		t.Errorf("RestrictedNodeIDs[0] = %q", ids[0])
 	}
 }
@@ -37,7 +37,7 @@ func TestRestrictedNodeIDs_ConfidentialAllowed(t *testing.T) {
 	if len(ids) != 1 {
 		t.Fatalf("expected only analysis restricted, got %d: %v", len(ids), ids)
 	}
-	if ids[0] != "model.dbt_guard_example.analysis_clientes" {
+	if ids[0] != "model.dbt_guard_example.analysis_customers" {
 		t.Errorf("RestrictedNodeIDs[0] = %q", ids[0])
 	}
 }

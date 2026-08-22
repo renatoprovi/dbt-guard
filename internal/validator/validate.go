@@ -1,8 +1,8 @@
 package validator
 
 import (
-	"github.com/renatocruz/dbt-guard/internal/config"
-	"github.com/renatocruz/dbt-guard/internal/parser"
+	"github.com/renatoprovi/dbt-guard/internal/config"
+	"github.com/renatoprovi/dbt-guard/internal/parser"
 )
 
 // Violation represents a model in a restricted layer that descends from PII without masking.

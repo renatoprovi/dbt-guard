@@ -8,14 +8,12 @@ import (
 
 // SourceFile represents the contents of a dbt sources YAML file (e.g. sources.yml).
 type SourceFile struct {
-	Version int      `yaml:"version,omitempty"`
 	Sources []Source `yaml:"sources"`
 }
 
 // Source represents a dbt source (origin schema/tables).
 type Source struct {
 	Name   string  `yaml:"name"`
-	Schema string  `yaml:"schema,omitempty"`
 	Tables []Table `yaml:"tables"`
 }
 

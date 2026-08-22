@@ -1,5 +1,8 @@
 # dbt-guard
 
+[![CI](https://github.com/renatoprovi/dbt-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/renatoprovi/dbt-guard/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Governance CLI for [dbt](https://docs.getdbt.com/) projects. Audits lineage from `sources.yml` and `manifest.json`, propagates PII sensitivity through the dependency graph, and blocks unmasked sensitive data from reaching **restricted** consumption layers (configurable via `dbt-guard.yml`).
 
 Built for CI gates and data-contract enforcement (e.g. LGPD/GDPR-style PII controls).
@@ -101,11 +104,11 @@ PII is declared at the **source**. Sensitivity **propagates downstream** through
 
 ```mermaid
 flowchart BT
-  SRC["source.raw_clientes<br/>column cpf: security_tag pii"]
-  STG["stg_clientes<br/>inherits PII"]
+  SRC["source.raw_customers<br/>column ssn: security_tag pii"]
+  STG["stg_customers<br/>inherits PII"]
   DWH["dim_customer<br/>neutral layer"]
   CF["confidential_finance<br/>pii_allowed"]
-  ANA["analysis_clientes<br/>pii_restricted"]
+  ANA["analysis_customers<br/>pii_restricted"]
 
   SRC --> STG
   STG --> DWH
@@ -123,7 +126,7 @@ flowchart BT
 Example violation path:
 
 ```
-analysis_clientes -> stg_clientes -> source.raw_clientes
+analysis_customers -> stg_customers -> source.raw_customers
 ```
 
 ---
@@ -162,7 +165,7 @@ Directory mode (`dbt-guard [path]`) scans `sources.yml` **before** compile — u
 ## Quick start
 
 ```bash
-git clone https://github.com/renatocruz/dbt-guard.git
+git clone https://github.com/renatoprovi/dbt-guard.git
 cd dbt-guard
 go build -o dbt-guard ./cmd/dbt-guard
 
@@ -177,15 +180,21 @@ go build -o dbt-guard ./cmd/dbt-guard
 
 ## Installation
 
+### Pre-built binary (recommended)
+
+Download the archive for your OS/arch from the [Releases page](https://github.com/renatoprovi/dbt-guard/releases), extract it, and put `dbt-guard` on your `PATH`.
+
+### go install
+
 ```bash
-go build -o dbt-guard ./cmd/dbt-guard
+go install github.com/renatoprovi/dbt-guard/cmd/dbt-guard@latest
 ```
 
-Install globally (optional):
+### From source
 
 ```bash
-go install ./cmd/dbt-guard
-# or: cp dbt-guard ~/go/bin/  or  /usr/local/bin/
+go build -o dbt-guard ./cmd/dbt-guard
+# or: go install ./cmd/dbt-guard   (from within a checkout)
 ```
 
 Run without installing:
@@ -210,8 +219,8 @@ go run ./cmd/dbt-guard ./examples
 ### Example output (`validate`)
 
 ```
-[dbt-guard] model in restricted layer descends from PII without masking: model.dbt_guard_example.analysis_clientes
-  lineage: model.dbt_guard_example.analysis_clientes -> model.dbt_guard_example.stg_clientes -> source.dbt_guard_example.raw.raw_clientes
+[dbt-guard] model in restricted layer descends from PII without masking: model.dbt_guard_example.analysis_customers
+  lineage: model.dbt_guard_example.analysis_customers -> model.dbt_guard_example.stg_customers -> source.dbt_guard_example.raw.raw_customers
 ```
 
 ### Layer policy (`dbt-guard.yml`)
@@ -268,7 +277,7 @@ In `sources.yml`, mark PII on columns:
 
 ```yaml
 columns:
-  - name: cpf
+  - name: ssn
     meta:
       security_tag: pii
 ```
@@ -349,4 +358,4 @@ Phases 1–3 (manifest parser, DFS propagation, `validate` gate + layer policy) 
 
 ## License
 
-Project under active development; use according to your organization's policy.
+[MIT](LICENSE)

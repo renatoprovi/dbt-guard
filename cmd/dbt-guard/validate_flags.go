@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/renatocruz/dbt-guard/internal/config"
+	"github.com/renatoprovi/dbt-guard/internal/config"
 )
 
 type validateOptions struct {

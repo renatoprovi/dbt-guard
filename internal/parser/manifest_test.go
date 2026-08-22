@@ -39,7 +39,7 @@ func TestSourceIDsWithPII(t *testing.T) {
 	if len(ids) != 1 {
 		t.Fatalf("expected 1 source with PII, got %d: %v", len(ids), ids)
 	}
-	expected := "source.dbt_guard_example.raw.raw_clientes"
+	expected := "source.dbt_guard_example.raw.raw_customers"
 	if ids[0] != expected {
 		t.Errorf("SourceIDsWithPII[0] = %q, want %q", ids[0], expected)
 	}
@@ -66,21 +66,6 @@ func TestHasPIIColumn_ConfigMeta(t *testing.T) {
 	}
 	if !s.HasPIIColumn() {
 		t.Error("expected HasPIIColumn true for column with config.meta.security_tag: pii")
-	}
-}
-
-func TestAnalysisNodeIDs(t *testing.T) {
-	path := filepath.Join("testdata", "manifest_minimal.json")
-	m, err := LoadManifest(path)
-	if err != nil {
-		t.Fatalf("LoadManifest: %v", err)
-	}
-	ids := m.AnalysisNodeIDs()
-	if len(ids) != 1 {
-		t.Fatalf("expected 1 node in analysis, got %d: %v", len(ids), ids)
-	}
-	if ids[0] != "model.dbt_guard_example.analysis_clientes" {
-		t.Errorf("AnalysisNodeIDs[0] = %q", ids[0])
 	}
 }
 

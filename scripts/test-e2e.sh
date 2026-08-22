@@ -15,17 +15,17 @@ go build -o "$BIN" ./cmd/dbt-guard
 echo ""
 echo "==> 1. Directory mode (PII columns in examples):"
 out=$("$BIN" ./examples 2>&1) || true
-if echo "$out" | grep -q "cpf"; then
-  echo "    OK: output contains 'cpf'"
+if echo "$out" | grep -q "ssn"; then
+  echo "    OK: output contains 'ssn'"
 else
-  echo "    FAILED: expected output containing 'cpf', got: $out"
+  echo "    FAILED: expected output containing 'ssn', got: $out"
   exit 1
 fi
 
 echo ""
 echo "==> 2. manifest (IDs that declare PII):"
 out=$("$BIN" manifest "$MANIFEST_MINIMAL" 2>&1) || true
-if echo "$out" | grep -q "source.dbt_guard_example.raw.raw_clientes"; then
+if echo "$out" | grep -q "source.dbt_guard_example.raw.raw_customers"; then
   echo "    OK: PII source listed"
 else
   echo "    FAILED: expected PII source in output, got: $out"
@@ -35,7 +35,7 @@ fi
 echo ""
 echo "==> 3. sensitive (sensitive nodes, DFS):"
 out=$("$BIN" sensitive "$MANIFEST_MINIMAL" 2>&1) || true
-for id in "source.dbt_guard_example.raw.raw_clientes" "model.dbt_guard_example.stg_clientes" "model.dbt_guard_example.analysis_clientes"; do
+for id in "source.dbt_guard_example.raw.raw_customers" "model.dbt_guard_example.stg_customers" "model.dbt_guard_example.analysis_customers"; do
   if echo "$out" | grep -q "$id"; then
     echo "    OK: $id"
   else

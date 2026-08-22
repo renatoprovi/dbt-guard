@@ -1,31 +1,31 @@
 {
   "metadata": {},
   "nodes": {
-    "model.dbt_guard_example.stg_clientes": {
-      "unique_id": "model.dbt_guard_example.stg_clientes",
+    "model.dbt_guard_example.stg_customers": {
+      "unique_id": "model.dbt_guard_example.stg_customers",
       "resource_type": "model",
-      "depends_on": { "nodes": ["source.dbt_guard_example.raw.raw_clientes"], "macros": [] },
+      "depends_on": { "nodes": ["source.dbt_guard_example.raw.raw_customers"], "macros": [] },
       "meta": {},
-      "name": "stg_clientes",
-      "original_file_path": "models/staging/stg_clientes.sql"
+      "name": "stg_customers",
+      "original_file_path": "models/staging/stg_customers.sql"
     },
-    "model.dbt_guard_example.analysis_clientes": {
-      "unique_id": "model.dbt_guard_example.analysis_clientes",
+    "model.dbt_guard_example.analysis_customers": {
+      "unique_id": "model.dbt_guard_example.analysis_customers",
       "resource_type": "model",
-      "depends_on": { "nodes": ["model.dbt_guard_example.stg_clientes"], "macros": [] },
+      "depends_on": { "nodes": ["model.dbt_guard_example.stg_customers"], "macros": [] },
       "meta": { "masked": true },
-      "name": "analysis_clientes",
-      "original_file_path": "models/analysis/analysis_clientes.sql"
+      "name": "analysis_customers",
+      "original_file_path": "models/analysis/analysis_customers.sql"
     }
   },
   "sources": {
-    "source.dbt_guard_example.raw.raw_clientes": {
-      "unique_id": "source.dbt_guard_example.raw.raw_clientes",
+    "source.dbt_guard_example.raw.raw_customers": {
+      "unique_id": "source.dbt_guard_example.raw.raw_customers",
       "source_name": "raw",
-      "name": "raw_clientes",
+      "name": "raw_customers",
       "columns": {
-        "cpf": { "meta": { "security_tag": "pii" } },
-        "nome": {}
+        "ssn": { "meta": { "security_tag": "pii" } },
+        "name": {}
       },
       "original_file_path": "models/sources.yml"
     }

@@ -1,5 +1,5 @@
-# Perfil mínimo para dbt compile. Para compilar sem banco real, use este diretório como DBT_PROFILES_DIR.
-# Ex.: DBT_PROFILES_DIR=. dbt compile
+# Minimal profile for dbt compile. To compile without a real database, use this directory as DBT_PROFILES_DIR.
+# E.g.: DBT_PROFILES_DIR=. dbt compile
 default:
   target: dev
   outputs:

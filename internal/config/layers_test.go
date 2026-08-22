@@ -59,9 +59,9 @@ func TestAllowedWinsOverRestricted(t *testing.T) {
 
 func TestNormalizePathPattern(t *testing.T) {
 	cases := map[string]string{
-		"analysis":        "/analysis/",
+		"analysis":         "/analysis/",
 		"/models/analysis": "/models/analysis/",
-		"confidential/":   "/confidential/",
+		"confidential/":    "/confidential/",
 	}
 	for in, want := range cases {
 		if got := normalizePathPattern(in); got != want {

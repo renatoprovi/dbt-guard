@@ -9,22 +9,17 @@ import (
 // Manifest represents a dbt manifest.json (v10+).
 // Only nodes and sources are mapped; the decoder ignores the rest (memory optimization).
 type Manifest struct {
-	Metadata json.RawMessage          `json:"metadata,omitempty"`
-	Nodes    map[string]*ManifestNode `json:"nodes"`
-	Sources  map[string]*SourceDef    `json:"sources"`
+	Nodes   map[string]*ManifestNode `json:"nodes"`
+	Sources map[string]*SourceDef    `json:"sources"`
 }
 
 // ManifestNode represents a graph node (model, analysis, seed, etc.).
 type ManifestNode struct {
-	UniqueID         string      `json:"unique_id"`
 	ResourceType     string      `json:"resource_type"`
 	DependsOn        *DependsOn  `json:"depends_on,omitempty"`
 	Meta             MetaMap     `json:"meta,omitempty"`
 	Config           *ConfigMeta `json:"config,omitempty"`
 	OriginalFilePath string      `json:"original_file_path,omitempty"`
-	Name             string      `json:"name,omitempty"`
-	Fqn              []string    `json:"fqn,omitempty"`
-	// Fields unused for lineage can be omitted; the decoder fills only what exists.
 }
 
 // DependsOn holds node dependencies (parents in the graph).
@@ -43,9 +38,6 @@ type ConfigMeta struct {
 
 // SourceDef represents a source in the manifest (declared data source).
 type SourceDef struct {
-	UniqueID         string                `json:"unique_id"`
-	SourceName       string                `json:"source_name"`
-	Name             string                `json:"name"`
 	Columns          map[string]ColumnInfo `json:"columns,omitempty"`
 	Meta             MetaMap               `json:"meta,omitempty"`
 	OriginalFilePath string                `json:"original_file_path,omitempty"`
