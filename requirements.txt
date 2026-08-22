@@ -1,2 +1,1 @@
-dbt-databricks==1.11.6
 dbt-duckdb==1.10.1

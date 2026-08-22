@@ -6,9 +6,9 @@ Minimal **real** dbt project for testing dbt-guard governance (PII contract + li
 
 | Layer | Path | Description |
 |-------|------|-------------|
-| Source | `models/sources.yml` | `raw_clientes`: `cpf` tagged `meta.security_tag: pii`, `nome` public. |
-| Staging | `models/staging/stg_clientes.sql` | Selects from source; inherits PII sensitivity. |
-| Analysis | `models/analysis/analysis_clientes.sql` | Exposes `cpf` as `documento_aluno` — **restricted** by default. |
+| Source | `models/sources.yml` | `raw_customers`: `ssn` tagged `meta.security_tag: pii`, `name` public. |
+| Staging | `models/staging/stg_customers.sql` | Selects from source; inherits PII sensitivity. |
+| Analysis | `models/analysis/analysis_customers.sql` | Exposes `ssn` as `student_document` — **restricted** by default. |
 
 `manifest.json` is **not** versioned. Generate it with `dbt compile`, or use repo fixtures under `internal/parser/testdata/`.
 
@@ -36,15 +36,15 @@ From repository root (`dbt-guard/`):
 ```bash
 # 1. PII columns from sources.yml
 go run ./cmd/dbt-guard examples
-# expected: cpf
+# expected: ssn
 
 # 2. Nodes/sources that declare PII
 go run ./cmd/dbt-guard manifest internal/parser/testdata/manifest_minimal.json
-# expected: source.dbt_guard_example.raw.raw_clientes
+# expected: source.dbt_guard_example.raw.raw_customers
 
 # 3. All sensitive nodes (DFS propagation)
 go run ./cmd/dbt-guard sensitive internal/parser/testdata/manifest_minimal.json
-# expected: source + stg_clientes + analysis_clientes
+# expected: source + stg_customers + analysis_customers
 
 # 4. Validate — default policy (/analysis/ restricted)
 go run ./cmd/dbt-guard validate internal/parser/testdata/manifest_minimal.json
@@ -67,7 +67,7 @@ Fixture `manifest_with_confidential.json` adds a model under `models/confidentia
 
 ## Test with dbt compile
 
-Requires [dbt-core](https://docs.getdbt.com/docs/get-started/installation) (e.g. `pip install dbt-core dbt-postgres`):
+Requires [dbt-core](https://docs.getdbt.com/docs/get-started/installation) (e.g. `pip install -r requirements.txt`):
 
 ```bash
 cd examples
@@ -84,7 +84,7 @@ go run ./cmd/dbt-guard validate examples/target/manifest.json
 go run ./cmd/dbt-guard validate examples/target/manifest.json --config examples/dbt-guard.yml
 ```
 
-Postgres does not need to be running; `compile` only generates artifacts. `profiles.yml` targets Postgres for teams that also run `dbt run` locally.
+`profiles.yml` targets an in-memory DuckDB file, so `compile` needs no running database or credentials — it only generates artifacts.
 
 ---
 

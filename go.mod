@@ -1,4 +1,4 @@
-module github.com/renatocruz/dbt-guard
+module github.com/renatoprovi/dbt-guard
 
 go 1.22
 

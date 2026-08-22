@@ -1,0 +1,20 @@
+name: Feature request
+description: Propose a new capability or a change in behavior.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check [docs/ROADMAP.md](https://github.com/renatoprovi/dbt-guard/blob/main/docs/ROADMAP.md) first — if it's already listed under "Future," feel free to +1 here with your use case instead of duplicating.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the governance/CI scenario you're blocked on, not just the feature itself.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How would you expect this to work from the CLI / config side?

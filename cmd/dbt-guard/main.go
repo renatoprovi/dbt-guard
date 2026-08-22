@@ -5,11 +5,21 @@ import (
 	"os"
 	"strings"
 
-	"github.com/renatocruz/dbt-guard/internal/parser"
-	"github.com/renatocruz/dbt-guard/internal/validator"
+	"github.com/renatoprovi/dbt-guard/internal/parser"
+	"github.com/renatoprovi/dbt-guard/internal/validator"
+)
+
+// version and commit are set at build time via -ldflags (see .goreleaser.yml).
+var (
+	version = "dev"
+	commit  = "none"
 )
 
 func main() {
+	if len(os.Args) >= 2 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
+		fmt.Printf("dbt-guard %s (%s)\n", version, commit)
+		return
+	}
 	if len(os.Args) >= 3 && os.Args[1] == "manifest" {
 		if err := parser.PrintManifestPII(os.Args[2]); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)

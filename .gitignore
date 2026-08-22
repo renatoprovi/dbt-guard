@@ -44,3 +44,5 @@ Thumbs.db
 *.log
 *.tmp
 *.swp
+# Compiled binary (published via GitHub Releases, see .goreleaser.yml)
+/dbt-guard

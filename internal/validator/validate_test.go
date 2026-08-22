@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/renatocruz/dbt-guard/internal/config"
+	"github.com/renatoprovi/dbt-guard/internal/config"
 )
 
 func TestRunValidate_Violation(t *testing.T) {
@@ -17,15 +17,15 @@ func TestRunValidate_Violation(t *testing.T) {
 		t.Fatalf("expected 1 violation, got %d", len(violations))
 	}
 	v := violations[0]
-	if v.ModelID != "model.dbt_guard_example.analysis_clientes" {
+	if v.ModelID != "model.dbt_guard_example.analysis_customers" {
 		t.Errorf("ModelID = %q", v.ModelID)
 	}
 	if len(v.LineagePath) != 3 {
 		t.Errorf("expected 3 nodes in path, got %d: %v", len(v.LineagePath), v.LineagePath)
 	}
-	if v.LineagePath[0] != "model.dbt_guard_example.analysis_clientes" ||
-		v.LineagePath[1] != "model.dbt_guard_example.stg_clientes" ||
-		v.LineagePath[2] != "source.dbt_guard_example.raw.raw_clientes" {
+	if v.LineagePath[0] != "model.dbt_guard_example.analysis_customers" ||
+		v.LineagePath[1] != "model.dbt_guard_example.stg_customers" ||
+		v.LineagePath[2] != "source.dbt_guard_example.raw.raw_customers" {
 		t.Errorf("LineagePath = %v", v.LineagePath)
 	}
 }
@@ -54,7 +54,7 @@ func TestRunValidate_ConfidentialAllowed(t *testing.T) {
 	if len(violations) != 1 {
 		t.Fatalf("expected 1 violation (analysis only), got %d: %v", len(violations), violations)
 	}
-	if violations[0].ModelID != "model.dbt_guard_example.analysis_clientes" {
+	if violations[0].ModelID != "model.dbt_guard_example.analysis_customers" {
 		t.Errorf("ModelID = %q", violations[0].ModelID)
 	}
 }

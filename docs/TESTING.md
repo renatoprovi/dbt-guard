@@ -56,7 +56,7 @@ go build -o dbt-guard ./cmd/dbt-guard
 ./dbt-guard validate \
   internal/parser/testdata/manifest_with_confidential.json \
   --config examples/dbt-guard.yml
-# expect: 1 violation (analysis_clientes only)
+# expect: 1 violation (analysis_customers only)
 ```
 
 ---

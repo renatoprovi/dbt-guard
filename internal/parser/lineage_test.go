@@ -11,7 +11,7 @@ func TestIsSensitive_SourceWithPII(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadManifest: %v", err)
 	}
-	sourceID := "source.dbt_guard_example.raw.raw_clientes"
+	sourceID := "source.dbt_guard_example.raw.raw_customers"
 	if !IsSensitive(sourceID, m) {
 		t.Errorf("IsSensitive(%q) = false, want true (source has PII column)", sourceID)
 	}
@@ -23,13 +23,13 @@ func TestIsSensitive_ModelDescendsFromPII(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadManifest: %v", err)
 	}
-	// stg_clientes depends on source raw.raw_clientes which has PII
-	stgID := "model.dbt_guard_example.stg_clientes"
+	// stg_customers depends on source raw.raw_customers which has PII
+	stgID := "model.dbt_guard_example.stg_customers"
 	if !IsSensitive(stgID, m) {
 		t.Errorf("IsSensitive(%q) = false, want true (descends from PII source)", stgID)
 	}
-	// analysis_clientes depends on stg_clientes -> PII source
-	analysisID := "model.dbt_guard_example.analysis_clientes"
+	// analysis_customers depends on stg_customers -> PII source
+	analysisID := "model.dbt_guard_example.analysis_customers"
 	if !IsSensitive(analysisID, m) {
 		t.Errorf("IsSensitive(%q) = false, want true (descends from PII source)", analysisID)
 	}
@@ -58,13 +58,13 @@ func TestLineagePathToPII(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadManifest: %v", err)
 	}
-	p := LineagePathToPII("model.dbt_guard_example.analysis_clientes", m)
+	p := LineagePathToPII("model.dbt_guard_example.analysis_customers", m)
 	if len(p) != 3 {
 		t.Fatalf("expected path with 3 nodes, got %d: %v", len(p), p)
 	}
-	if p[0] != "model.dbt_guard_example.analysis_clientes" ||
-		p[1] != "model.dbt_guard_example.stg_clientes" ||
-		p[2] != "source.dbt_guard_example.raw.raw_clientes" {
+	if p[0] != "model.dbt_guard_example.analysis_customers" ||
+		p[1] != "model.dbt_guard_example.stg_customers" ||
+		p[2] != "source.dbt_guard_example.raw.raw_customers" {
 		t.Errorf("LineagePathToPII = %v", p)
 	}
 	if len(LineagePathToPII("model.fake.xyz", m)) != 0 {

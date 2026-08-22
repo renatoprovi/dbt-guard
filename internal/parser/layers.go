@@ -1,7 +1,7 @@
 package parser
 
 import (
-	"github.com/renatocruz/dbt-guard/internal/config"
+	"github.com/renatoprovi/dbt-guard/internal/config"
 )
 
 // RestrictedNodeIDs returns unique_id values for models in restricted layers that are not in allowed layers.
@@ -21,9 +21,4 @@ func (m *Manifest) RestrictedNodeIDs(policy config.LayerPolicy) []string {
 		}
 	}
 	return out
-}
-
-// AnalysisNodeIDs returns models under /analysis/ (legacy helper; prefer RestrictedNodeIDs with DefaultLayerPolicy).
-func (m *Manifest) AnalysisNodeIDs() []string {
-	return m.RestrictedNodeIDs(config.DefaultLayerPolicy())
 }
